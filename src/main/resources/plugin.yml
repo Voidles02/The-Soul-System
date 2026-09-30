@@ -1,9 +1,9 @@
 name: Souls
 version: '${version}'
 prefix: Enhanced
-main: com.kodari.souls.SoulsPlugin
+main: com.KDI.souls.SoulsPlugin
 api-version: '1.20'
-author: Kodari
+author: voidles02
 softdepend:
   - PlaceholderAPI
 commands:
