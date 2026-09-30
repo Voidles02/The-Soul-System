@@ -109,14 +109,14 @@ public final class GuideService {
                         + "Right-click the placed Altar to open its simple interface. Place one supported item or book in the center input slot.\n\n"
                         + "Click &6Upgrade &7to roll an available Soul upgrade. Close the menu to safely return the input item."),
                 page("&6&lALTAR UPGRADES", "&8Spend Souls on equipment\n\n"
-                        + "Weapons can roll Damage, Soul Durability, Speed, LifeSteal, or Attract when compatible. Pickaxes and hoes can roll Soul Durability or Yield. Books can roll Yield.\n\n"
-                        + "The default base cost is &b50 Souls&7. The final cost depends on the rolled upgrade strength. There is no Altar upgrade cooldown.\n\n"
+                        + "Weapons can roll Damage, Soul Durability, Crit, LifeSteal, or Attract when compatible. Crit increases critical-hit damage; each roll adds 2.25%-4.5% toward its 45% maximum. Pickaxes and hoes can roll Soul Durability or Yield. Books can roll Yield.\n\n"
+                        + "The default base cost is &b50 Souls&7. Each Crit roll adds 5%-10% of the maximum effect and costs the same share of the base Altar cost. There is no Altar upgrade cooldown.\n\n"
                         + "The balance is charged only after a valid upgrade is rolled and applied."),
                 page("&6&lALTAR LIMITS", "&8Upgrade caps\n\n"
                         + "Default maximum values are:\n"
                         + "&7Damage: &b150%\n"
                         + "&7Soul Durability: &b300%\n"
-                        + "&7Speed: &b150%\n"
+                        + "&7Crit: &b45%\n"
                         + "&7LifeSteal: &b70%\n"
                         + "&7Attract: &b70%\n"
                         + "&7Yield: &bIII\n\n"

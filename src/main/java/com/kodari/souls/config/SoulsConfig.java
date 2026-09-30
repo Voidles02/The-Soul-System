@@ -207,12 +207,12 @@ public final class SoulsConfig {
         return Math.max(altarAttractMin(), boundedPercent("altar.upgrades.attract.max", 0.20));
     }
 
-    public double altarSpeedMin() {
-        return boundedPercent("altar.upgrades.speed.min", 0.05);
+    public double altarCritMin() {
+        return boundedPercent("altar.upgrades.crit.min", 0.0225);
     }
 
-    public double altarSpeedMax() {
-        return Math.max(altarSpeedMin(), boundedPercent("altar.upgrades.speed.max", 0.20));
+    public double altarCritMax() {
+        return Math.max(altarCritMin(), boundedPercent("altar.upgrades.crit.max", 0.045));
     }
 
     public double altarDamageCap() {
@@ -231,8 +231,8 @@ public final class SoulsConfig {
         return boundedPercent("altar.caps.attract", 0.70);
     }
 
-    public double altarSpeedCap() {
-        return Math.max(0.95, Math.min(1.40, positiveDouble("altar.caps.speed", 1.40)));
+    public double altarCritCap() {
+        return Math.min(0.45, positiveDouble("altar.caps.crit", 0.45));
     }
 
     public String altarSound() {

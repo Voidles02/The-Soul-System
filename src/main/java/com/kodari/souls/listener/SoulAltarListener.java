@@ -9,6 +9,7 @@ import com.kodari.souls.service.SoulService;
 import com.kodari.souls.structure.SoulStructureService;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
+import org.bukkit.entity.AbstractArrow;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
@@ -54,13 +55,15 @@ public final class SoulAltarListener implements Listener {
     private final org.bukkit.NamespacedKey durabilityKey;
     private final org.bukkit.NamespacedKey lifestealKey;
     private final org.bukkit.NamespacedKey attractKey;
-    private final org.bukkit.NamespacedKey speedKey;
+    private final org.bukkit.NamespacedKey legacySpeedKey;
+    private final org.bukkit.NamespacedKey critKey;
     private final org.bukkit.NamespacedKey yieldKey;
     private final org.bukkit.NamespacedKey projectileDamageKey;
+    private final org.bukkit.NamespacedKey projectileCritKey;
     private final org.bukkit.NamespacedKey projectileLifestealKey;
     private final org.bukkit.NamespacedKey projectileAttractKey;
     private final org.bukkit.NamespacedKey projectileWeaponKey;
-    private final UUID speedModifierUuid;
+    private final UUID legacySpeedModifierUuid;
     private final UUID damageModifierUuid;
     private final UUID vanillaDamageModifierUuid;
     private final Set<UUID> processing = ConcurrentHashMap.newKeySet();
@@ -76,13 +79,15 @@ public final class SoulAltarListener implements Listener {
         this.durabilityKey = new org.bukkit.NamespacedKey(plugin, "soul_weapon_durability");
         this.lifestealKey = new org.bukkit.NamespacedKey(plugin, "soul_weapon_lifesteal");
         this.attractKey = new org.bukkit.NamespacedKey(plugin, "soul_weapon_attract");
-        this.speedKey = new org.bukkit.NamespacedKey(plugin, "soul_weapon_speed");
+        this.legacySpeedKey = new org.bukkit.NamespacedKey(plugin, "soul_weapon_speed");
+        this.critKey = new org.bukkit.NamespacedKey(plugin, "soul_weapon_crit");
         this.yieldKey = new org.bukkit.NamespacedKey(plugin, "soul_yield");
         this.projectileDamageKey = new org.bukkit.NamespacedKey(plugin, "soul_projectile_damage");
+        this.projectileCritKey = new org.bukkit.NamespacedKey(plugin, "soul_projectile_crit");
         this.projectileLifestealKey = new org.bukkit.NamespacedKey(plugin, "soul_projectile_lifesteal");
         this.projectileAttractKey = new org.bukkit.NamespacedKey(plugin, "soul_projectile_attract");
         this.projectileWeaponKey = new org.bukkit.NamespacedKey(plugin, "soul_projectile_weapon");
-        this.speedModifierUuid = UUID.nameUUIDFromBytes((plugin.getName() + ":speed").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        this.legacySpeedModifierUuid = UUID.nameUUIDFromBytes((plugin.getName() + ":speed").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         this.damageModifierUuid = UUID.nameUUIDFromBytes((plugin.getName() + ":damage").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         this.vanillaDamageModifierUuid = UUID.nameUUIDFromBytes((plugin.getName() + ":vanilla_damage").getBytes(java.nio.charset.StandardCharsets.UTF_8));
     }
@@ -312,7 +317,7 @@ public final class SoulAltarListener implements Listener {
         boolean tool = material.endsWith("_PICKAXE") || material.endsWith("_SHOVEL") || material.endsWith("_HOE");
         List<String> upgrades = book ? new ArrayList<>()
                 : tool ? new ArrayList<>(List.of("durability", "yield"))
-                : new ArrayList<>(List.of("damage", "durability", "speed"));
+                : new ArrayList<>(List.of("damage", "durability", "crit"));
         boolean hasLifesteal = pdc.getOrDefault(lifestealKey, PersistentDataType.DOUBLE, 0D) > 0;
         boolean hasAttract = pdc.has(attractKey, PersistentDataType.BYTE)
                 || pdc.getOrDefault(attractKey, PersistentDataType.DOUBLE, 0D) > 0;
@@ -347,9 +352,12 @@ public final class SoulAltarListener implements Listener {
         } else if (upgrade.equals("attract")) {
             amount = random(config.altarAttractMin(), config.altarAttractMax());
             maximum = config.altarAttractMax();
+        } else if (upgrade.equals("crit")) {
+            amount = random(config.altarCritMin(), config.altarCritMax());
+            maximum = config.altarCritCap();
         } else {
-            amount = random(config.altarSpeedMin(), config.altarSpeedMax());
-            maximum = config.altarSpeedMax();
+            amount = random(config.altarCritMin(), config.altarCritMax());
+            maximum = config.altarCritCap();
         }
         long cost = Math.max(1, (long) Math.ceil(config.altarCost() * amount / maximum));
         return new UpgradeRoll(upgrade, amount, cost);
@@ -410,7 +418,7 @@ public final class SoulAltarListener implements Listener {
         }
         boolean hadCustomAttributes = hasSoulModifier(meta);
         com.cryptomorin.xseries.XAttribute.of("attack_speed").ifPresent(attribute -> removeSoulModifier(meta,
-                attribute.get(), "souls:speed", speedModifierUuid));
+                attribute.get(), "souls:speed", legacySpeedModifierUuid));
         com.cryptomorin.xseries.XAttribute.of("attack_damage").ifPresent(attribute -> removeSoulModifier(meta,
                 attribute.get(), "souls:damage", damageModifierUuid));
         com.cryptomorin.xseries.XAttribute.of("attack_damage").ifPresent(attribute -> removeSoulModifier(meta,
@@ -418,27 +426,22 @@ public final class SoulAltarListener implements Listener {
 
         var container = meta.getPersistentDataContainer();
         String material = com.cryptomorin.xseries.XMaterial.matchXMaterial(item.getType()).name();
-        double speed = container.getOrDefault(speedKey, PersistentDataType.DOUBLE, 0D);
-        if (!Double.isFinite(speed) || speed < 0) {
-            speed = 0;
-            container.set(speedKey, PersistentDataType.DOUBLE, speed);
+        if (container.has(legacySpeedKey, PersistentDataType.DOUBLE)) {
+            if (!container.has(critKey, PersistentDataType.DOUBLE)) {
+                container.set(critKey, PersistentDataType.DOUBLE, critValue(container));
+            }
+            container.remove(legacySpeedKey);
         }
-        double speedCap = speedCap(item);
-        if (speed > speedCap) {
-            speed = speedCap;
-            container.set(speedKey, PersistentDataType.DOUBLE, speed);
-            setLore(meta, "Soul Speed:", "&eSoul Speed: &f" + percent(speed));
-        }
-        if (container.has(speedKey, PersistentDataType.DOUBLE) && isAttributeWeapon(item)) {
-            double amount = Math.min(speedCap, Math.max(0.05, speed));
-            com.cryptomorin.xseries.XAttribute.of("attack_speed").ifPresent(attribute -> meta.addAttributeModifier(
-                    attribute.get(), new AttributeModifier(speedModifierUuid, "souls:speed", amount,
-                            AttributeModifier.Operation.ADD_NUMBER, EquipmentSlot.HAND)));
+        removeLore(meta, "Soul Speed:");
+        if (container.has(critKey, PersistentDataType.DOUBLE)) {
+            double crit = critValue(container);
+            container.set(critKey, PersistentDataType.DOUBLE, crit);
+            setLore(meta, "Crit:", "&dCrit: &f" + percent(crit));
         }
 
         double damage = container.getOrDefault(damageKey, PersistentDataType.DOUBLE, 0D);
         double baseDamage = baseAttackDamage(material);
-        if ((hadCustomAttributes || speed > 0 || damage > 0) && baseDamage > 0 && isCombatWeapon(item)) {
+        if ((hadCustomAttributes || critValue(container) > 0 || damage > 0) && baseDamage > 0 && isCombatWeapon(item)) {
             double soulAmount = Double.isFinite(damage) && damage > 0
                     ? Math.min(baseDamage * (damage * 0.40), Math.max(0, damageTotalCap(material) - baseDamage)) : 0;
             com.cryptomorin.xseries.XAttribute.of("attack_damage").ifPresent(attribute -> {
@@ -465,7 +468,7 @@ public final class SoulAltarListener implements Listener {
             return false;
         }
         for (var modifier : modifiers) {
-            if (speedModifierUuid.equals(modifier.getUniqueId())
+            if (legacySpeedModifierUuid.equals(modifier.getUniqueId())
                     || damageModifierUuid.equals(modifier.getUniqueId())
                     || vanillaDamageModifierUuid.equals(modifier.getUniqueId())
                     || "souls:speed".equals(modifier.getName())
@@ -524,10 +527,10 @@ public final class SoulAltarListener implements Listener {
             container.set(attractKey, PersistentDataType.DOUBLE, value);
             setLore(meta, "Attract Chance:", "&bAttract Chance: &f" + percent(value));
         } else {
-            double value = Math.min(speedCap(item), container.getOrDefault(speedKey, PersistentDataType.DOUBLE, 0D)
-                    + roll.amount());
-            container.set(speedKey, PersistentDataType.DOUBLE, value);
-            setLore(meta, "Soul Speed:", "&eSoul Speed: &f" + percent(value));
+            double value = Math.min(config.altarCritCap(), critValue(container) + roll.amount());
+            container.set(critKey, PersistentDataType.DOUBLE, value);
+            removeLore(meta, "Soul Speed:");
+            setLore(meta, "Crit:", "&dCrit: &f" + percent(value));
         }
         item.setItemMeta(meta);
         refreshSoulAttributes(item);
@@ -549,9 +552,10 @@ public final class SoulAltarListener implements Listener {
             case "durability" -> durabilityKey;
             case "lifesteal" -> lifestealKey;
             case "attract" -> attractKey;
-            default -> speedKey;
+            case "crit" -> critKey;
+            default -> critKey;
         };
-        return pdc.getOrDefault(key, PersistentDataType.DOUBLE, 0D);
+        return type.equals("crit") ? critValue(pdc) : pdc.getOrDefault(key, PersistentDataType.DOUBLE, 0D);
     }
 
     private double cap(ItemStack item, String type) {
@@ -561,56 +565,16 @@ public final class SoulAltarListener implements Listener {
             case "durability" -> config.altarDurabilityCap();
             case "lifesteal" -> config.altarLifestealCap();
             case "attract" -> config.altarAttractCap();
-            default -> speedCap(item);
+            case "crit" -> config.altarCritCap();
+            default -> config.altarCritCap();
         };
     }
 
-    private double speedCap(ItemStack item) {
-        if (item == null || item.getType().isAir()) {
-            return config.altarSpeedCap();
-        }
-        String material = com.cryptomorin.xseries.XMaterial.matchXMaterial(item.getType()).name();
-        double vanillaSpeed = vanillaAttackSpeed(material);
-        if (vanillaSpeed <= 0) {
-            return config.altarSpeedCap();
-        }
-        return Math.min(config.altarSpeedCap(), Math.max(0.95, vanillaSpeed));
-    }
-
-    private double vanillaAttackSpeed(String material) {
-        if (material.endsWith("_SWORD")) {
-            return 1.6;
-        }
-        if (material.endsWith("_AXE")) {
-            return 1.0;
-        }
-        if (material.endsWith("_PICKAXE")) {
-            return 1.2;
-        }
-        if (material.endsWith("_SHOVEL")) {
-            return 1.0;
-        }
-        if (material.endsWith("_HOE")) {
-            if (material.startsWith("STONE")) {
-                return 2.0;
-            }
-            if (material.startsWith("IRON")) {
-                return 3.0;
-            }
-            if (material.startsWith("DIAMOND") || material.startsWith("NETHERITE")) {
-                return 4.0;
-            }
-            return 1.0;
-        }
-        if (material.endsWith("_SPEAR") || material.equals("SPEAR")) {
-            return 1.2;
-        }
-        return switch (material) {
-            case "MACE" -> 0.6;
-            case "TRIDENT" -> 1.1;
-            case "BOW", "CROSSBOW" -> 1.0;
-            default -> 0;
-        };
+    private double critValue(org.bukkit.persistence.PersistentDataContainer pdc) {
+        double value = pdc.has(critKey, PersistentDataType.DOUBLE)
+                ? pdc.getOrDefault(critKey, PersistentDataType.DOUBLE, 0D)
+                : pdc.getOrDefault(legacySpeedKey, PersistentDataType.DOUBLE, 0D);
+        return Double.isFinite(value) ? Math.min(config.altarCritCap(), Math.max(0, value)) : 0;
     }
 
     private double theoreticalWeaponStrength(String material) {
@@ -716,21 +680,21 @@ public final class SoulAltarListener implements Listener {
         int secondYield = secondPdc.getOrDefault(yieldKey, PersistentDataType.INTEGER, 0);
         double firstDamage = firstPdc.getOrDefault(damageKey, PersistentDataType.DOUBLE, 0D);
         double secondDamage = secondPdc.getOrDefault(damageKey, PersistentDataType.DOUBLE, 0D);
-        double firstSpeed = firstPdc.getOrDefault(speedKey, PersistentDataType.DOUBLE, 0D);
-        double secondSpeed = secondPdc.getOrDefault(speedKey, PersistentDataType.DOUBLE, 0D);
+        double firstCrit = critValue(firstPdc);
+        double secondCrit = critValue(secondPdc);
         double firstDurability = firstPdc.getOrDefault(durabilityKey, PersistentDataType.DOUBLE, 0D);
         double secondDurability = secondPdc.getOrDefault(durabilityKey, PersistentDataType.DOUBLE, 0D);
         boolean secondLifesteal = secondPdc.getOrDefault(lifestealKey, PersistentDataType.DOUBLE, 0D) > 0;
         boolean secondAttract = secondPdc.has(attractKey, PersistentDataType.BYTE)
                 || secondPdc.getOrDefault(attractKey, PersistentDataType.DOUBLE, 0D) > 0;
-        if (secondYield == 0 && secondDamage <= 0 && secondSpeed <= 0 && secondDurability <= 0 && !secondLifesteal && !secondAttract) {
+        if (secondYield == 0 && secondDamage <= 0 && secondCrit <= 0 && secondDurability <= 0 && !secondLifesteal && !secondAttract) {
             return;
         }
         String firstType = com.cryptomorin.xseries.XMaterial.matchXMaterial(first.getType()).name();
         boolean yieldTool = firstType.endsWith("_PICKAXE") || firstType.endsWith("_SHOVEL") || firstType.endsWith("_HOE")
                 || firstType.equals("BOOK") || firstType.equals("ENCHANTED_BOOK");
         boolean majorTarget = isWeapon(first) && (!yieldTool || firstType.equals("BOOK") || firstType.equals("ENCHANTED_BOOK"));
-        if ((secondYield > 0 && !yieldTool) || ((secondDamage > 0 || secondSpeed > 0) && !isCombatWeapon(first))
+        if ((secondYield > 0 && !yieldTool) || ((secondDamage > 0 || secondCrit > 0) && !isCombatWeapon(first))
                 || (secondDurability > 0 && !isWeapon(first))
                 || ((secondLifesteal || secondAttract) && !majorTarget)) {
             return;
@@ -748,10 +712,12 @@ public final class SoulAltarListener implements Listener {
             resultPdc.set(damageKey, PersistentDataType.DOUBLE, value);
             setLore(meta, "Soul Damage:", "&cSoul Damage: &f" + percent(value));
         }
-        if (secondSpeed > 0) {
-            double value = Math.min(speedCap(result), firstSpeed + secondSpeed);
-            resultPdc.set(speedKey, PersistentDataType.DOUBLE, value);
-            setLore(meta, "Soul Speed:", "&eSoul Speed: &f" + percent(value));
+        if (secondCrit > 0) {
+            double value = Math.min(config.altarCritCap(), firstCrit + secondCrit);
+            resultPdc.remove(legacySpeedKey);
+            resultPdc.set(critKey, PersistentDataType.DOUBLE, value);
+            removeLore(meta, "Soul Speed:");
+            setLore(meta, "Crit:", "&dCrit: &f" + percent(value));
         }
         if (secondYield > 0) {
             int level = firstYield == secondYield ? Math.min(3, firstYield + 1) : Math.max(firstYield, secondYield);
@@ -827,6 +793,15 @@ public final class SoulAltarListener implements Listener {
         meta.setLore(lore);
     }
 
+    private void removeLore(ItemMeta meta, String prefix) {
+        if (!meta.hasLore()) {
+            return;
+        }
+        List<String> lore = new ArrayList<>(meta.getLore());
+        lore.removeIf(existing -> org.bukkit.ChatColor.stripColor(existing).startsWith(prefix));
+        meta.setLore(lore);
+    }
+
     @EventHandler
     public void onProjectileLaunch(ProjectileLaunchEvent event) {
         if (!(event.getEntity().getShooter() instanceof Player player)) {
@@ -839,6 +814,10 @@ public final class SoulAltarListener implements Listener {
         var source = weapon.getItemMeta().getPersistentDataContainer();
         var target = event.getEntity().getPersistentDataContainer();
         copyDouble(source, target, damageKey, projectileDamageKey);
+        double crit = critValue(source);
+        if (crit > 0) {
+            target.set(projectileCritKey, PersistentDataType.DOUBLE, crit);
+        }
         target.set(projectileWeaponKey, PersistentDataType.STRING,
                 com.cryptomorin.xseries.XMaterial.matchXMaterial(weapon.getType()).name());
         copyDouble(source, target, lifestealKey, projectileLifestealKey);
@@ -854,6 +833,7 @@ public final class SoulAltarListener implements Listener {
         Player attacker = null;
         ItemStack weapon = null;
         double damageBonus = 0;
+        double crit = 0;
         double lifesteal = 0;
         double attract = 0;
         String weaponMaterial = null;
@@ -863,6 +843,7 @@ public final class SoulAltarListener implements Listener {
             if (weapon != null && weapon.hasItemMeta()) {
                 var pdc = weapon.getItemMeta().getPersistentDataContainer();
                 damageBonus = pdc.getOrDefault(damageKey, PersistentDataType.DOUBLE, 0D);
+                crit = critValue(pdc);
                 lifesteal = pdc.getOrDefault(lifestealKey, PersistentDataType.DOUBLE, 0D);
                 attract = pdc.has(attractKey, PersistentDataType.BYTE) ? 1D
                         : pdc.getOrDefault(attractKey, PersistentDataType.DOUBLE, 0D);
@@ -872,6 +853,7 @@ public final class SoulAltarListener implements Listener {
             attacker = player;
             var pdc = projectile.getPersistentDataContainer();
             damageBonus = pdc.getOrDefault(projectileDamageKey, PersistentDataType.DOUBLE, 0D);
+            crit = pdc.getOrDefault(projectileCritKey, PersistentDataType.DOUBLE, 0D);
             lifesteal = pdc.getOrDefault(projectileLifestealKey, PersistentDataType.DOUBLE, 0D);
             attract = pdc.getOrDefault(projectileAttractKey, PersistentDataType.DOUBLE, 0D);
             weaponMaterial = pdc.get(projectileWeaponKey, PersistentDataType.STRING);
@@ -890,6 +872,12 @@ public final class SoulAltarListener implements Listener {
         } else if (damageBonus > 0 && weaponMaterial != null) {
             event.setDamage(Math.min(event.getDamage(), soulDamageCap(weaponMaterial)));
         }
+        boolean critical = event.getDamager() instanceof Projectile projectile
+                ? projectile instanceof AbstractArrow arrow && arrow.isCritical()
+                : isCriticalMelee(attacker);
+        if (critical && crit > 0) {
+            event.setDamage(event.getDamage() * (1 + crit));
+        }
         if (event.getEntity() instanceof LivingEntity target && ThreadLocalRandom.current().nextDouble() < lifesteal) {
             attacker.setHealth(Math.min(attacker.getMaxHealth(), attacker.getHealth() + 4 + ThreadLocalRandom.current().nextDouble() * 4));
         }
@@ -900,6 +888,13 @@ public final class SoulAltarListener implements Listener {
                 target.setVelocity(direction.normalize().multiply(0.7).setY(0.25));
             }
         }
+    }
+
+    private boolean isCriticalMelee(Player player) {
+        boolean blinded = player.getActivePotionEffects().stream()
+                .anyMatch(effect -> effect.getType().getKey().getKey().equals("blindness"));
+        return player.getFallDistance() > 0 && !player.isOnGround() && !player.isClimbing()
+                && !player.isInWater() && !player.isInsideVehicle() && !player.isSprinting() && !blinded;
     }
 
     private double soulDamageCap(String material) {

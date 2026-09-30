@@ -131,15 +131,15 @@ altar:
     attract:
       min: 0.02
       max: 0.20
-    speed:
-      min: 0.05
-      max: 0.20
+    crit:
+      min: 0.0225
+      max: 0.045
   caps:
     damage: 1.50
     durability: 3.00
     lifesteal: 0.70
     attract: 0.70
-    speed: 1.40
+    crit: 0.45
   feedback:
     sound: BLOCK_ENCHANTMENT_TABLE_USE
     particle: ENCHANT
