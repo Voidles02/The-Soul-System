@@ -9,7 +9,7 @@ Souls provide an additional layer of progression without being required for norm
 * Persistent **UUID-based Soul balances**
 * Configurable **PvE Soul rewards**
 * Optional **PvP rewards** with cooldowns and diminishing returns
-* **500 Soul maximum balance**
+* **1000 Soul maximum balance**
 * Every **100 Souls** grants stacking bonuses to:
 
   * ⚡ Haste
