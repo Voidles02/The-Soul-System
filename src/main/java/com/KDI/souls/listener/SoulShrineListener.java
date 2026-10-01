@@ -179,14 +179,19 @@ public final class SoulShrineListener implements Listener {
         if (!config.fragmentsEnabled()) {
             return rewardSouls(player);
         }
-        ItemStack fragment = fragments.createItem((int) config.shrineFragmentReward());
-        if (fragment == null) {
-            messages.send(player, "shrine-unavailable");
-            return false;
+        long remaining = config.shrineFragmentReward();
+        long reward = remaining;
+        while (remaining > 0) {
+            ItemStack fragment = fragments.createItem((int) Math.min(64L, remaining));
+            if (fragment == null) {
+                messages.send(player, "shrine-unavailable");
+                return false;
+            }
+            player.getInventory().addItem(fragment).values().forEach(item ->
+                    player.getWorld().dropItemNaturally(player.getLocation(), item));
+            remaining -= fragment.getAmount();
         }
-        player.getInventory().addItem(fragment).values().forEach(item ->
-                player.getWorld().dropItemNaturally(player.getLocation(), item));
-        messages.send(player, "shrine-fragments", Map.of("amount", config.shrineFragmentReward()));
+        messages.send(player, "shrine-fragments", Map.of("amount", reward));
         return true;
     }
 

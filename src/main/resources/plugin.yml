@@ -1,6 +1,6 @@
 name: Souls
 version: '${version}'
-prefix: Enhanced
+prefix: Major
 main: com.KDI.souls.SoulsPlugin
 api-version: '1.20'
 author: voidles02
@@ -9,7 +9,7 @@ softdepend:
 commands:
   souls:
     description: View and manage Souls.
-    usage: /souls [stats|top|pay|give|take|set|remove <player> [amount|all]|inspect|convert|reload]
+    usage: /souls [stats|top|pay|give|take|set|remove <player> [amount|all]|inspect|convert|reload|sw|sw-cooldown <player> [dash|slam|activate|all]|sw-cooldown set <dash|slam|activate> <amount><seconds|minutes|hours|days>]
     aliases:
       - soul
   guide:

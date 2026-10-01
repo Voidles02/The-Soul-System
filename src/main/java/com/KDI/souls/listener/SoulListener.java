@@ -93,11 +93,14 @@ public final class SoulListener implements Listener {
             database.recordPvpResult(killer.getUniqueId(), victim.getUniqueId());
         }
         if (config.lossEnabled() && config.worldEnabled(victim.getWorld().getName(), "pvp")) {
-            long loss = (long) Math.floor(souls.getBalance(victim.getUniqueId()) * config.lossPercentage());
-            if (config.lossMaximum() > 0) {
-                loss = Math.min(loss, config.lossMaximum());
-            }
-            souls.loseSouls(victim.getUniqueId(), loss, "death");
+            java.util.UUID victimId = victim.getUniqueId();
+            souls.loadBalance(victimId).thenRun(() -> Bukkit.getScheduler().runTask(plugin, () -> {
+                long loss = (long) Math.floor(souls.getBalance(victimId) * config.lossPercentage());
+                if (config.lossMaximum() > 0) {
+                    loss = Math.min(loss, config.lossMaximum());
+                }
+                souls.loseSouls(victimId, loss, "death");
+            }));
         }
     }
 

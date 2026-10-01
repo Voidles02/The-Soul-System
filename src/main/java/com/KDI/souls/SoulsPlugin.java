@@ -14,6 +14,7 @@ import com.KDI.souls.placeholder.SoulsPlaceholderExpansion;
 import com.KDI.souls.recipe.SoulRecipeService;
 import com.KDI.souls.service.FragmentService;
 import com.KDI.souls.service.SoulService;
+import com.KDI.souls.service.SuperweaponService;
 import com.KDI.souls.structure.SoulStructureService;
 import com.KDI.souls.system.PluginSystemsChecker;
 import org.bukkit.Bukkit;
@@ -57,15 +58,18 @@ public final class SoulsPlugin extends JavaPlugin {
                 new SoulListener(this, soulService, fragmentService, databaseManager, soulsConfig, messageService), this);
         getServer().getPluginManager().registerEvents(new SoulStatsListener(), this);
         getServer().getPluginManager().registerEvents(new GuideListener(guideService), this);
-        getServer().getPluginManager().registerEvents(
-                new com.KDI.souls.listener.SoulAltarListener(this, soulService, soulsConfig, messageService, structures), this);
+        com.KDI.souls.listener.SoulAltarListener altar =
+                new com.KDI.souls.listener.SoulAltarListener(this, soulService, soulsConfig, messageService, structures);
+        getServer().getPluginManager().registerEvents(altar, this);
         getServer().getPluginManager().registerEvents(
                 new com.KDI.souls.listener.SoulShrineListener(this, soulService, fragmentService, soulsConfig, messageService, structures), this);
         getServer().getScheduler().runTaskTimer(this,
                 () -> Bukkit.getOnlinePlayers().forEach(soulService::ensureBoost), 40L, 40L);
 
+        SuperweaponService superweapons = new SuperweaponService(this, altar, messageService);
+        getServer().getPluginManager().registerEvents(superweapons, this);
         SoulsCommand command = new SoulsCommand(this, soulService, fragmentService, databaseManager,
-                soulsConfig, messageService, new SoulStatsGui(this, soulService, fragmentService, soulsConfig, databaseManager));
+                soulsConfig, messageService, new SoulStatsGui(this, soulService, fragmentService, soulsConfig, databaseManager), superweapons);
         getCommand("souls").setExecutor(command);
         getCommand("souls").setTabCompleter(command);
         getCommand("guide").setExecutor(new GuideCommand(guideService, messageService));
@@ -94,7 +98,7 @@ public final class SoulsPlugin extends JavaPlugin {
         logBannerLine("Souls Enabled");
         logBannerLine("Name: Souls");
         logBannerLine("Version: " + getDescription().getVersion());
-        logBannerLine("Prefix: Enhanced");
+        logBannerLine("Prefix: Major");
         logBannerLine("Files updated:");
         if (updatedFiles.isEmpty()) {
             logBannerLine("  None");

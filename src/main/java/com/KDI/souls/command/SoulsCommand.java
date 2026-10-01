@@ -9,6 +9,7 @@ import com.KDI.souls.gui.SoulStatsGui;
 import com.KDI.souls.service.FragmentService;
 import com.KDI.souls.service.LocalSoulStore;
 import com.KDI.souls.service.SoulService;
+import com.KDI.souls.service.SuperweaponService;
 import org.bukkit.Bukkit;
 import org.bukkit.OfflinePlayer;
 import org.bukkit.command.Command;
@@ -20,6 +21,7 @@ import org.bukkit.entity.Player;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public final class SoulsCommand implements CommandExecutor, TabCompleter {
@@ -30,8 +32,9 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
     private final SoulsConfig config;
     private final MessageService messages;
     private final SoulStatsGui statsGui;
+    private final SuperweaponService superweapons;
     public SoulsCommand(SoulsPlugin plugin, SoulService souls, FragmentService fragments, DatabaseManager database,
-                        SoulsConfig config, MessageService messages, SoulStatsGui statsGui) {
+                        SoulsConfig config, MessageService messages, SoulStatsGui statsGui, SuperweaponService superweapons) {
         this.plugin = plugin;
         this.souls = souls;
         this.fragments = fragments;
@@ -39,6 +42,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         this.config = config;
         this.messages = messages;
         this.statsGui = statsGui;
+        this.superweapons = superweapons;
     }
 
     @Override
@@ -68,9 +72,109 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             case "remove" -> remove(sender, args);
             case "inspect" -> inspect(sender, args);
             case "reload" -> reload(sender);
+            case "sw" -> openSuperweapons(sender);
+            case "sw-cooldown" -> superweaponCooldown(sender, args);
             default -> messages.sendList(sender, "help");
         }
         return true;
+    }
+
+    private void openSuperweapons(CommandSender sender) {
+        if (!requireAdmin(sender)) {
+            return;
+        }
+        if (!(sender instanceof Player player)) {
+            messages.send(sender, "player-only");
+            return;
+        }
+        superweapons.open(player);
+    }
+
+    private void superweaponCooldown(CommandSender sender, String[] args) {
+        if (!requireAdmin(sender)) {
+            return;
+        }
+        if (args.length >= 2 && args[1].equalsIgnoreCase("set")) {
+            if (args.length != 4) {
+                messages.send(sender, "sw-cooldown-usage");
+                return;
+            }
+            String ability = args[2].toLowerCase(Locale.ROOT);
+            if (!List.of("dash", "slam", "activate").contains(ability)) {
+                messages.send(sender, "sw-cooldown-usage");
+                return;
+            }
+            Long durationMillis = parseCooldownDuration(args[3]);
+            if (durationMillis == null) {
+                messages.send(sender, "sw-cooldown-duration-invalid");
+                return;
+            }
+            superweapons.setCooldownDuration(ability, durationMillis);
+            messages.send(sender, "sw-cooldown-set", Map.of(
+                    "ability", ability,
+                    "duration", args[3]));
+            return;
+        }
+        if (args.length < 2 || args.length > 3) {
+            messages.send(sender, "sw-cooldown-usage");
+            return;
+        }
+        String ability = args.length == 3 ? args[2].toLowerCase() : "all";
+        if (!List.of("dash", "slam", "activate", "all").contains(ability)) {
+            messages.send(sender, "sw-cooldown-usage");
+            return;
+        }
+        Player target = Bukkit.getPlayerExact(args[1]);
+        if (target == null) {
+            messages.send(sender, "player-not-found");
+            return;
+        }
+        superweapons.clearCooldown(target, ability);
+        messages.send(sender, "sw-cooldown-cleared", Map.of(
+                "ability", ability.equals("all") ? "Dash, Slam, and Activate" : ability,
+                "player", target.getName()));
+    }
+
+    private Long parseCooldownDuration(String value) {
+        String normalized = value.toLowerCase(Locale.ROOT);
+        long multiplier;
+        String amount;
+        if (normalized.endsWith("seconds")) {
+            multiplier = 1_000L;
+            amount = normalized.substring(0, normalized.length() - "seconds".length());
+        } else if (normalized.endsWith("second")) {
+            multiplier = 1_000L;
+            amount = normalized.substring(0, normalized.length() - "second".length());
+        } else if (normalized.endsWith("minutes")) {
+            multiplier = 60_000L;
+            amount = normalized.substring(0, normalized.length() - "minutes".length());
+        } else if (normalized.endsWith("minute")) {
+            multiplier = 60_000L;
+            amount = normalized.substring(0, normalized.length() - "minute".length());
+        } else if (normalized.endsWith("hours")) {
+            multiplier = 3_600_000L;
+            amount = normalized.substring(0, normalized.length() - "hours".length());
+        } else if (normalized.endsWith("hour")) {
+            multiplier = 3_600_000L;
+            amount = normalized.substring(0, normalized.length() - "hour".length());
+        } else if (normalized.endsWith("days")) {
+            multiplier = 86_400_000L;
+            amount = normalized.substring(0, normalized.length() - "days".length());
+        } else if (normalized.endsWith("day")) {
+            multiplier = 86_400_000L;
+            amount = normalized.substring(0, normalized.length() - "day".length());
+        } else {
+            return null;
+        }
+        try {
+            long count = Long.parseLong(amount);
+            if (count <= 0) {
+                return null;
+            }
+            return Math.multiplyExact(count, multiplier);
+        } catch (NumberFormatException | ArithmeticException exception) {
+            return null;
+        }
     }
 
     private void openStats(CommandSender sender) {
@@ -287,8 +391,36 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "convert", "give", "take", "set", "remove", "inspect", "reload").stream()
+            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "convert", "give", "take", "set", "remove", "inspect", "reload", "sw", "sw-cooldown").stream()
+                    .filter(value -> !(value.equals("sw") || value.equals("sw-cooldown")) || sender.hasPermission("souls.admin"))
                     .filter(value -> value.startsWith(args[0].toLowerCase())).toList();
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("sw-cooldown")
+                && sender.hasPermission("souls.admin")) {
+            List<String> suggestions = new ArrayList<>();
+            suggestions.add("set");
+            List<String> names = new ArrayList<>();
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                names.add(player.getName());
+            }
+            suggestions.addAll(names);
+            return suggestions.stream()
+                    .filter(value -> value.toLowerCase(Locale.ROOT).startsWith(args[1].toLowerCase(Locale.ROOT)))
+                    .toList();
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("sw-cooldown")
+                && sender.hasPermission("souls.admin")) {
+            if (args[1].equalsIgnoreCase("set")) {
+                return List.of("dash", "slam", "activate").stream()
+                        .filter(value -> value.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
+            }
+            return List.of("dash", "slam", "activate", "all").stream()
+                    .filter(value -> value.startsWith(args[2].toLowerCase())).toList();
+        }
+        if (args.length == 4 && args[0].equalsIgnoreCase("sw-cooldown")
+                && args[1].equalsIgnoreCase("set") && sender.hasPermission("souls.admin")) {
+            return List.of("20seconds", "20minutes", "20hours", "20days").stream()
+                    .filter(value -> value.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 2 && List.of("pay", "give", "take", "set", "remove", "inspect").contains(args[0].toLowerCase())) {
             List<String> names = new ArrayList<>();

@@ -67,6 +67,7 @@ public final class SoulAltarListener implements Listener {
     private final UUID damageModifierUuid;
     private final UUID vanillaDamageModifierUuid;
     private final Set<UUID> processing = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> abilityAttackers = ConcurrentHashMap.newKeySet();
 
     public SoulAltarListener(JavaPlugin plugin, SoulService souls, SoulsConfig config,
                              MessageService messages, SoulStructureService structures) {
@@ -496,6 +497,34 @@ public final class SoulAltarListener implements Listener {
         return type.equals("lifesteal") ? "LifeSteal" : type.substring(0, 1).toUpperCase() + type.substring(1);
     }
 
+    public void applyMaxSoulEnchants(ItemStack item) {
+        ItemMeta meta = item.getItemMeta();
+        var container = meta.getPersistentDataContainer();
+        container.set(damageKey, PersistentDataType.DOUBLE, config.altarDamageCap());
+        container.set(durabilityKey, PersistentDataType.DOUBLE, config.altarDurabilityCap());
+        container.set(lifestealKey, PersistentDataType.DOUBLE, config.altarLifestealCap());
+        container.set(attractKey, PersistentDataType.DOUBLE, config.altarAttractCap());
+        container.set(critKey, PersistentDataType.DOUBLE, config.altarCritCap());
+        container.set(yieldKey, PersistentDataType.INTEGER, 3);
+        setLore(meta, "Soul Damage:", "&cSoul Damage: &f" + percent(config.altarDamageCap()));
+        setLore(meta, "Soul Durability:", "&aSoul Durability: &f" + percent(config.altarDurabilityCap()));
+        setLore(meta, "LifeSteal Chance:", "&dLifeSteal Chance: &f" + percent(config.altarLifestealCap()));
+        setLore(meta, "Attract Chance:", "&bAttract Chance: &f" + percent(config.altarAttractCap()));
+        setLore(meta, "Crit:", "&dCrit: &f" + percent(config.altarCritCap()));
+        setLore(meta, "Yield ", "&6Yield III");
+        item.setItemMeta(meta);
+        refreshSoulAttributes(item);
+    }
+
+    public void damageFromAbility(Player target, Player attacker, double damage) {
+        abilityAttackers.add(attacker.getUniqueId());
+        try {
+            target.damage(damage, attacker);
+        } finally {
+            abilityAttackers.remove(attacker.getUniqueId());
+        }
+    }
+
     private String applyUpgrade(ItemStack item, UpgradeRoll roll) {
         ItemMeta meta = item.getItemMeta();
         var container = meta.getPersistentDataContainer();
@@ -830,6 +859,9 @@ public final class SoulAltarListener implements Listener {
 
     @EventHandler
     public void onDamage(EntityDamageByEntityEvent event) {
+        if (event.getDamager() instanceof Player player && abilityAttackers.contains(player.getUniqueId())) {
+            return;
+        }
         Player attacker = null;
         ItemStack weapon = null;
         double damageBonus = 0;

@@ -11,6 +11,12 @@ database:
 souls:
   max-balance: 1000
 
+superweapon:
+  cooldowns:
+    dash-millis: 120000
+    slam-millis: 300000
+    activate-millis: 900000
+
 local-data:
   enabled: true
   folder: server-data
