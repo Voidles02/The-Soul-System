@@ -75,6 +75,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             case "inspect" -> inspect(sender, args);
             case "reload" -> reload(sender);
             case "sw" -> openSuperweapons(sender);
+            case "sw-info" -> openSuperweaponInfo(sender);
             case "sw-cooldown" -> superweaponCooldown(sender, args);
             case "artifact" -> registerArtifacts(sender);
             case "artifacts" -> artifacts(sender, args);
@@ -92,6 +93,14 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         superweapons.open(player);
+    }
+
+    private void openSuperweaponInfo(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            messages.send(sender, "player-only");
+            return;
+        }
+        superweapons.openInfoBook(player);
     }
 
     private void superweaponCooldown(CommandSender sender, String[] args) {
@@ -494,7 +503,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "convert", "give", "take", "set", "remove", "inspect", "reload", "sw", "sw-cooldown", "artifact", "artifacts").stream()
+            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "convert", "give", "take", "set", "remove", "inspect", "reload", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
                     .filter(value -> !(value.equals("sw") || value.equals("sw-cooldown") || value.equals("artifact") || value.equals("artifacts"))
                             || sender.hasPermission("souls.admin"))
                     .filter(value -> value.startsWith(args[0].toLowerCase())).toList();

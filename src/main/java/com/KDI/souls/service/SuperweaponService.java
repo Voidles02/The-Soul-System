@@ -41,6 +41,7 @@ import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.InventoryView;
+import org.bukkit.inventory.meta.BookMeta;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.meta.SkullMeta;
 import org.bukkit.persistence.PersistentDataType;
@@ -49,8 +50,6 @@ import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.scheduler.BukkitTask;
 import org.bukkit.util.BoundingBox;
 import org.bukkit.util.Vector;
-import net.md_5.bungee.api.ChatMessageType;
-import net.md_5.bungee.api.chat.TextComponent;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -114,6 +113,71 @@ public final class SuperweaponService implements Listener {
             holder.getInventory().setItem(15, createSarculum());
         }
         player.openInventory(holder.getInventory());
+    }
+
+    public void openInfoBook(Player player) {
+        ItemStack book = XMaterial.matchXMaterial("WRITTEN_BOOK").map(XMaterial::parseItem).orElse(null);
+        if (book == null || !(book.getItemMeta() instanceof BookMeta meta)) {
+            return;
+        }
+        String title = plugin.getConfig().getString("superweapon.info-book.title", "Soul Weapons");
+        meta.setTitle(MessageService.color(title.length() > 32 ? title.substring(0, 32) : title));
+        meta.setAuthor(plugin.getConfig().getString("superweapon.info-book.author", "Souls"));
+        List<String> pageTemplates = plugin.getConfig().getStringList("superweapon.info-book.pages");
+        if (pageTemplates.isEmpty()) {
+            messages.send(player, "sw-info-unavailable");
+            return;
+        }
+        Map<String, String> replacements = Map.of(
+                "{dash-cooldown}", formatCooldown("dash", 2 * 60 * 1000L),
+                "{slam-cooldown}", formatCooldown("slam", 5 * 60 * 1000L),
+                "{activate-cooldown}", formatCooldown("activate", 15 * 60 * 1000L),
+                "{beam-cooldown}", formatCooldown("beam", 10 * 60 * 1000L),
+                "{shop-status}", featureStatus("shop"),
+                "{altar-status}", featureStatus("altar"),
+                "{powers-status}", featureStatus("powers"),
+                "{bounties-status}", featureStatus("bounties"),
+                "{shrines-status}", featureStatus("shrines"),
+                "{events-status}", featureStatus("random-events"));
+        List<String> pages = new java.util.ArrayList<>(pageTemplates.size());
+        for (String page : pageTemplates) {
+            for (Map.Entry<String, String> replacement : replacements.entrySet()) {
+                page = page.replace(replacement.getKey(), replacement.getValue());
+            }
+            pages.add(MessageService.color(page));
+        }
+        meta.setPages(pages);
+        book.setItemMeta(meta);
+        player.openBook(book);
+    }
+
+    private String formatCooldown(String ability, long defaultMillis) {
+        long durationMillis = cooldownDurationMillis(ability, defaultMillis);
+        if (durationMillis <= 0L) {
+            return "No cooldown";
+        }
+        long seconds = durationMillis / 1000L + (durationMillis % 1000L == 0L ? 0L : 1L);
+        if (seconds >= 86400L) {
+            long days = seconds / 86400L;
+            long hours = seconds % 86400L / 3600L;
+            return hours == 0L ? days + "d" : days + "d " + hours + "h";
+        }
+        if (seconds >= 3600L) {
+            long hours = seconds / 3600L;
+            long minutes = seconds % 3600L / 60L;
+            return minutes == 0L ? hours + "h" : hours + "h " + minutes + "m";
+        }
+        if (seconds >= 60L) {
+            long minutes = seconds / 60L;
+            long remainingSeconds = seconds % 60L;
+            return remainingSeconds == 0L ? minutes + "m" : minutes + "m " + remainingSeconds + "s";
+        }
+        return seconds + "s";
+    }
+
+    private String featureStatus(String feature) {
+        return plugin.getConfig().getBoolean("features." + feature + ".enabled", true)
+                ? "&aEnabled" : "&cDisabled";
     }
 
     public void openArtifactViewer(Player player) {
@@ -695,8 +759,8 @@ public final class SuperweaponService implements Listener {
         meta.setLore(List.of(
                 MessageService.color("&7Right-click to invoke the book."),
                 MessageService.color("&7Left-click for a 45-block beam and 3 shockwaves; 10-minute cooldown."),
-                MessageService.color("&7Beam: 5 damage (2.5 hearts) per hit."),
-                MessageService.color("&7Shockwaves: up to 16 damage (8 hearts) at 2 blocks, falling to 6 damage (3 hearts) at 12 blocks."),
+                MessageService.color("&7Beam: 20 damage (10 hearts) per hit."),
+                MessageService.color("&7Shockwaves: up to 64 damage (32 hearts) at 2 blocks, falling to 24 damage (12 hearts) at 12 blocks."),
                 MessageService.color("&cStrength III &7— 8 minutes"),
                 MessageService.color("&dRegeneration V &7— 5 minutes"),
                 MessageService.color("&8Slowness I &7— 8 minutes"),
@@ -721,7 +785,7 @@ public final class SuperweaponService implements Listener {
                 MessageService.color("&7Slam: launch up to 8 blocks for one impact."),
                 MessageService.color("&7Airborne with a mace in your hotbar: launch up to 12 blocks for two impacts."),
                 MessageService.color("&7Each slam hit: 24 damage (12 hearts), with no distance falloff."),
-                MessageService.color("&7Airborne with a mace in your hotbar: 36 damage (18 hearts) per hit in a 4x radius."),
+                MessageService.color("&7Airborne with a mace in your hotbar: 36 damage (18 hearts) per hit in a 12-block radius."),
                 MessageService.color("&8Non-craftable artifact")));
         meta.getPersistentDataContainer().set(artifactKey, PersistentDataType.STRING, "sarculum");
         XEnchantment.matchXEnchantment("EFFICIENCY").ifPresent(enchant -> meta.addEnchant(enchant.getEnchant(), 5, true));
@@ -983,7 +1047,7 @@ public final class SuperweaponService implements Listener {
                 Location center = player.getLocation();
                 double rotation = ticks * Math.PI / 16;
                 XParticle.of("END_ROD").ifPresent(particle -> {
-                    for (int point = 0; point < 12; point++) {
+                    for (int point = 0; point < 6; point++) {
                         double angle = rotation + Math.PI * 2 * point / 6;
                         Location sparkle = center.clone().add(Math.cos(angle) * 0.9,
                                 0.2 + (point % 6) * 0.28 + Math.sin(rotation + point) * 0.08,
@@ -992,7 +1056,7 @@ public final class SuperweaponService implements Listener {
                     }
                 });
                 XParticle.of("SCULK_SOUL").ifPresent(particle -> {
-                    for (int point = 0; point < 6; point++) {
+                    for (int point = 0; point < 3; point++) {
                         double angle = -rotation * 1.4 + Math.PI * 2 * point / 6;
                         Location soul = center.clone().add(Math.cos(angle) * 0.5,
                                 0.55 + point * 0.2 + Math.sin(rotation + point) * 0.1,
@@ -1052,46 +1116,38 @@ public final class SuperweaponService implements Listener {
                     return;
                 }
                 long now = System.currentTimeMillis();
-                StringBuilder cooldowns = new StringBuilder();
-                appendCooldown(cooldowns, "Dash", player.getPersistentDataContainer()
-                        .getOrDefault(dashCooldownKey, PersistentDataType.LONG, 0L) - now);
-                appendCooldown(cooldowns, "Slam", player.getPersistentDataContainer()
-                        .getOrDefault(slamCooldownKey, PersistentDataType.LONG, 0L) - now);
-                appendCooldown(cooldowns, "Activate", player.getPersistentDataContainer()
-                        .getOrDefault(activateCooldownKey, PersistentDataType.LONG, 0L) - now);
-                appendCooldown(cooldowns, "Beam", player.getPersistentDataContainer()
-                        .getOrDefault(beamCooldownKey, PersistentDataType.LONG, 0L) - now);
-                if (cooldowns.isEmpty()) {
+                refreshHeldArtifactCooldown(player, now);
+                if (player.getPersistentDataContainer().getOrDefault(dashCooldownKey, PersistentDataType.LONG, 0L) <= now
+                        && player.getPersistentDataContainer().getOrDefault(slamCooldownKey, PersistentDataType.LONG, 0L) <= now
+                        && player.getPersistentDataContainer().getOrDefault(activateCooldownKey, PersistentDataType.LONG, 0L) <= now
+                        && player.getPersistentDataContainer().getOrDefault(beamCooldownKey, PersistentDataType.LONG, 0L) <= now) {
                     cooldownHudTasks.remove(uuid);
-                    player.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText(""));
                     cancel();
-                    return;
                 }
-                String template = messages.get("sw-cooldown-hud");
-                if (template.equals("sw-cooldown-hud")) {
-                    template = "&5Cooldown &8» &f{cooldowns}";
-                }
-                String message = template.replace("{cooldowns}", cooldowns.toString());
-                player.spigot().sendMessage(ChatMessageType.ACTION_BAR,
-                        TextComponent.fromLegacyText(MessageService.color(message)));
             }
         }.runTaskTimer(plugin, 0L, 10L);
         cooldownHudTasks.put(uuid, task);
     }
 
-    private void appendCooldown(StringBuilder cooldowns, String ability, long remainingMillis) {
-        if (remainingMillis <= 0) {
+    private void refreshHeldArtifactCooldown(Player player, long now) {
+        ItemStack heldItem = player.getInventory().getItemInMainHand();
+        String heldArtifact = artifact(heldItem);
+        if (heldArtifact == null) {
             return;
         }
-        long totalSeconds = remainingMillis / 1000 + (remainingMillis % 1000 == 0 ? 0 : 1);
-        if (!cooldowns.isEmpty()) {
-            cooldowns.append(" &8| ");
+        long remainingMillis = 0L;
+        if (heldArtifact.equals("boc")) {
+            remainingMillis = Math.max(
+                    player.getPersistentDataContainer().getOrDefault(activateCooldownKey, PersistentDataType.LONG, 0L),
+                    player.getPersistentDataContainer().getOrDefault(beamCooldownKey, PersistentDataType.LONG, 0L)) - now;
+        } else if (heldArtifact.equals("sarculum")) {
+            remainingMillis = Math.max(
+                    player.getPersistentDataContainer().getOrDefault(dashCooldownKey, PersistentDataType.LONG, 0L),
+                    player.getPersistentDataContainer().getOrDefault(slamCooldownKey, PersistentDataType.LONG, 0L)) - now;
         }
-        cooldowns.append("&f").append(ability).append(": ");
-        if (totalSeconds >= 60) {
-            cooldowns.append(totalSeconds / 60).append("m ").append(totalSeconds % 60).append("s");
-        } else {
-            cooldowns.append(totalSeconds).append('s');
+        if (remainingMillis > 0L) {
+            long ticks = remainingMillis / 50L + (remainingMillis % 50L == 0L ? 0L : 1L);
+            player.setCooldown(heldItem.getType(), (int) Math.min(Integer.MAX_VALUE, ticks));
         }
     }
 
@@ -1099,7 +1155,7 @@ public final class SuperweaponService implements Listener {
         if (!startCooldown(player, beamCooldownKey, cooldownDurationMillis("beam", 10 * 60 * 1000L))) {
             return;
         }
-        Set<UUID> hitTargets = new HashSet<>();
+        Map<UUID, Integer> lastHitTicks = new HashMap<>();
         BukkitTask task = new BukkitRunnable() {
             private int ticks;
 
@@ -1109,7 +1165,7 @@ public final class SuperweaponService implements Listener {
                     stopAction(player);
                     return;
                 }
-                fireBeam(player, hitTargets);
+                fireBeam(player, lastHitTicks, ticks);
                 ticks++;
                 if (ticks >= 100) {
                     stopAction(player);
@@ -1125,7 +1181,7 @@ public final class SuperweaponService implements Listener {
         XSound.matchXSound("ENTITY_WARDEN_SONIC_CHARGE").ifPresent(sound -> sound.play(player));
     }
 
-    private void fireBeam(Player attacker, Set<UUID> hit) {
+    private void fireBeam(Player attacker, Map<UUID, Integer> lastHitTicks, int ticks) {
         Location origin = attacker.getEyeLocation();
         Vector direction = origin.getDirection();
         if (direction.lengthSquared() < 0.001) {
@@ -1133,7 +1189,6 @@ public final class SuperweaponService implements Listener {
         }
         direction.normalize();
         World world = attacker.getWorld();
-        List<Entity> candidates = new java.util.ArrayList<>(world.getNearbyEntities(origin, 45, 45, 45));
         Vector right = direction.clone().crossProduct(new Vector(0, 1, 0));
         if (right.lengthSquared() < 0.001) {
             right = direction.clone().crossProduct(new Vector(1, 0, 0));
@@ -1144,16 +1199,16 @@ public final class SuperweaponService implements Listener {
         XParticle endRodParticle = XParticle.of("END_ROD").orElse(null);
         XParticle sonicParticle = XParticle.of("SONIC_BOOM").orElse(null);
         XParticle soulFireParticle = XParticle.of("SOUL_FIRE_FLAME").orElse(null);
-        for (double distance = 0.25; distance <= 45; distance += 0.25) {
+        for (double distance = 0.5; distance <= 45; distance += 0.5) {
             Location point = origin.clone().add(direction.clone().multiply(distance));
             if (soulParticle != null) {
-                world.spawnParticle(soulParticle.get(), point, 3, 0.04, 0.04, 0.04, 0.01);
+                world.spawnParticle(soulParticle.get(), point, 1, 0.04, 0.04, 0.04, 0.01);
             }
-            if (endRodParticle != null && ((int) (distance * 4)) % 2 == 0) {
+            if (endRodParticle != null && ((int) (distance * 2)) % 2 == 0) {
                 world.spawnParticle(endRodParticle.get(), point, 1, 0.02, 0.02, 0.02, 0);
             }
             double spiralAngle = distance * 2.4;
-            for (int strand = 0; strand < 2; strand++) {
+            for (int strand = 0; strand < 1; strand++) {
                 double angle = spiralAngle + strand * Math.PI;
                 Location spiral = point.clone()
                         .add(right.clone().multiply(Math.cos(angle) * 0.28))
@@ -1168,36 +1223,46 @@ public final class SuperweaponService implements Listener {
                 world.spawnParticle(sonicParticle.get(), point, 1);
             }
         }
-        for (Entity entity : candidates) {
-            if (!(entity instanceof LivingEntity target) || target.equals(attacker) || target.isDead()
-                    || !target.isValid()
-                    || (target instanceof Player targetPlayer
-                    && (!world.getPVP() || targetPlayer.getGameMode() == org.bukkit.GameMode.SPECTATOR))
-                    || !hit.add(target.getUniqueId())
-                    || !beamIntersects(target.getBoundingBox(), origin, direction)) {
+        Location candidatesCenter = origin.clone().add(direction.clone().multiply(22.5));
+        double xRange = Math.abs(direction.getX()) * 22.5 + 1.5;
+        double yRange = Math.abs(direction.getY()) * 22.5 + 1.5;
+        double zRange = Math.abs(direction.getZ()) * 22.5 + 1.5;
+        for (Entity entity : world.getNearbyEntities(candidatesCenter, xRange, yRange, zRange)) {
+            if (!(entity instanceof LivingEntity target) || target.equals(attacker)
+                    || target.isDead() || !target.isValid()
+                    || target instanceof Player targetPlayer
+                    && (!world.getPVP() || targetPlayer.getGameMode() == org.bukkit.GameMode.SPECTATOR)
+                    || ticks - lastHitTicks.getOrDefault(target.getUniqueId(), Integer.MIN_VALUE / 2) < 10) {
                 continue;
             }
-            target.setNoDamageTicks(0);
-            altar.damageFromAbility(target, attacker, 5.0);
-        }
-    }
-
-    private boolean beamIntersects(BoundingBox bounds, Location origin, Vector direction) {
-        double minX = bounds.getMinX() - 1.0;
-        double minY = bounds.getMinY() - 1.0;
-        double minZ = bounds.getMinZ() - 1.0;
-        double maxX = bounds.getMaxX() + 1.0;
-        double maxY = bounds.getMaxY() + 1.0;
-        double maxZ = bounds.getMaxZ() + 1.0;
-        for (double distance = 0; distance <= 45; distance += 0.1) {
-            double x = origin.getX() + direction.getX() * distance;
-            double y = origin.getY() + direction.getY() * distance;
-            double z = origin.getZ() + direction.getZ() * distance;
-            if (x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ) {
-                return true;
+            BoundingBox bounds = target.getBoundingBox();
+            double entityCenterX = (bounds.getMinX() + bounds.getMaxX()) * 0.5;
+            double entityCenterY = (bounds.getMinY() + bounds.getMaxY()) * 0.5;
+            double entityCenterZ = (bounds.getMinZ() + bounds.getMaxZ()) * 0.5;
+            double offsetX = entityCenterX - origin.getX();
+            double offsetY = entityCenterY - origin.getY();
+            double offsetZ = entityCenterZ - origin.getZ();
+            double distance = offsetX * direction.getX() + offsetY * direction.getY()
+                    + offsetZ * direction.getZ();
+            if (distance < 0 || distance > 45) {
+                continue;
             }
+            double beamX = origin.getX() + direction.getX() * distance;
+            double beamY = origin.getY() + direction.getY() * distance;
+            double beamZ = origin.getZ() + direction.getZ() * distance;
+            double closestX = Math.max(bounds.getMinX(), Math.min(bounds.getMaxX(), beamX));
+            double closestY = Math.max(bounds.getMinY(), Math.min(bounds.getMaxY(), beamY));
+            double closestZ = Math.max(bounds.getMinZ(), Math.min(bounds.getMaxZ(), beamZ));
+            double xDistance = closestX - beamX;
+            double yDistance = closestY - beamY;
+            double zDistance = closestZ - beamZ;
+            if (xDistance * xDistance + yDistance * yDistance + zDistance * zDistance > 1.0) {
+                continue;
+            }
+            lastHitTicks.put(target.getUniqueId(), ticks);
+            target.setNoDamageTicks(0);
+            altar.damageFromAbility(target, attacker, 20.0);
         }
-        return false;
     }
 
     private void shockwave(Player attacker) {
@@ -1225,8 +1290,8 @@ public final class SuperweaponService implements Listener {
                 }
                 int waveTick = ticks % 30;
                 double radius = 40.0 * (waveTick + 1) / 30.0;
-                for (int point = 0; point < 144; point++) {
-                    double angle = Math.PI * 2 * point / 144;
+                for (int point = 0; point < 72; point++) {
+                    double angle = Math.PI * 2 * point / 72;
                     double ripple = Math.sin(angle * 6 + ticks * 0.55) * 0.45;
                     for (int layer = 0; layer < 3; layer++) {
                         double layerRadius = Math.max(0, radius - layer * 0.16);
@@ -1273,7 +1338,7 @@ public final class SuperweaponService implements Listener {
             if (distance > 12) {
                 continue;
             }
-            double damage = distance <= 2 ? 16 : 18 - distance;
+            double damage = (distance <= 2 ? 16 : 18 - distance) * 4;
             target.setNoDamageTicks(0);
             if (target instanceof Player targetPlayer) {
                 altar.damageFromAbility(targetPlayer, attacker, damage);
@@ -1316,13 +1381,13 @@ public final class SuperweaponService implements Listener {
                 player.setVelocity(player.getVelocity().multiply(0.65).add(dashDirection.clone().multiply(0.8)));
                 strikeNearby(player, current, 4, false, false, hit);
                 XParticle.of("SWEEP_ATTACK").ifPresent(particle -> player.getWorld().spawnParticle(
-                        particle.get(), current.clone().add(0, 1, 0), 12, 0.25, 0.3, 0.25, 0.01));
+                        particle.get(), current.clone().add(0, 1, 0), 6, 0.25, 0.3, 0.25, 0.01));
                 XParticle.of("CLOUD").ifPresent(particle -> player.getWorld().spawnParticle(
-                        particle.get(), current.clone().add(0, 0.8, 0), 20, 0.25, 0.2, 0.25, 0.04));
+                        particle.get(), current.clone().add(0, 0.8, 0), 10, 0.25, 0.2, 0.25, 0.04));
                 XParticle.of("CRIT").ifPresent(particle -> player.getWorld().spawnParticle(
-                        particle.get(), current.clone().add(0, 1, 0), 12, 0.3, 0.35, 0.3, 0.15));
+                        particle.get(), current.clone().add(0, 1, 0), 6, 0.3, 0.35, 0.3, 0.15));
                 XParticle.of("SOUL_FIRE_FLAME").ifPresent(particle -> {
-                    for (int point = 0; point < 4; point++) {
+                    for (int point = 0; point < 2; point++) {
                         Location trail = current.clone()
                                 .subtract(dashDirection.clone().multiply(point * 0.4)).add(0, 0.9, 0);
                         player.getWorld().spawnParticle(particle.get(), trail, 2, 0.08, 0.08, 0.08, 0.01);
@@ -1384,19 +1449,19 @@ public final class SuperweaponService implements Listener {
                 if (airborne) {
                     if (aerialSlam) {
                         XParticle.of("SCULK_SOUL").ifPresent(particle -> player.getWorld().spawnParticle(
-                                particle.get(), current.clone().add(0, 0.4, 0), 24, 0.45, 0.4, 0.45, 0.08));
+                                particle.get(), current.clone().add(0, 0.4, 0), 12, 0.45, 0.4, 0.45, 0.08));
                         XParticle.of("SOUL_FIRE_FLAME").ifPresent(particle -> player.getWorld().spawnParticle(
-                                particle.get(), current.clone().add(0, 0.2, 0), 12, 0.3, 0.35, 0.3, 0.02));
+                                particle.get(), current.clone().add(0, 0.2, 0), 6, 0.3, 0.35, 0.3, 0.02));
                         XParticle.of("SMOKE").ifPresent(particle -> player.getWorld().spawnParticle(
-                                particle.get(), current.clone().add(0, 0.5, 0), 18, 0.35, 0.4, 0.35, 0.06));
+                                particle.get(), current.clone().add(0, 0.5, 0), 9, 0.35, 0.4, 0.35, 0.06));
                     } else {
                         XParticle.of("CLOUD").ifPresent(particle -> player.getWorld().spawnParticle(
-                                particle.get(), current.clone().add(0, 0.5, 0), 24, 0.25, 0.25, 0.25, 0.04));
+                                particle.get(), current.clone().add(0, 0.5, 0), 12, 0.25, 0.25, 0.25, 0.04));
                         XParticle.of("CRIT").ifPresent(particle -> player.getWorld().spawnParticle(
-                                particle.get(), current.clone().add(0, 0.4, 0), 16, 0.18, 0.18, 0.18, 0.1));
+                                particle.get(), current.clone().add(0, 0.4, 0), 8, 0.18, 0.18, 0.18, 0.1));
                         XParticle.of("SOUL_FIRE_FLAME").ifPresent(particle -> {
-                            for (int point = 0; point < 8; point++) {
-                                double angle = ticks * 0.38 + Math.PI * 2 * point / 8;
+                            for (int point = 0; point < 4; point++) {
+                                double angle = ticks * 0.38 + Math.PI * 2 * point / 4;
                                 Location orbit = current.clone().add(Math.cos(angle) * 0.65, 0.25,
                                         Math.sin(angle) * 0.65);
                                 player.getWorld().spawnParticle(particle.get(), orbit, 1, 0, 0, 0, 0);
@@ -1405,7 +1470,7 @@ public final class SuperweaponService implements Listener {
                     }
                 }
                 if (player.isOnGround() && airborne) {
-                    strikeNearby(player, current, aerialSlam ? 32 : 8, true, aerialSlam, new HashSet<>());
+                    strikeNearby(player, current, aerialSlam ? 12 : 8, true, aerialSlam, new HashSet<>());
                     XSound.matchXSound("ENTITY_GENERIC_EXPLODE").ifPresent(sound -> sound.play(player));
                     XSound.matchXSound("ENTITY_WARDEN_SONIC_BOOM").ifPresent(sound -> sound.play(player));
                     playSlamImpact(current, aerialSlam);
@@ -1426,7 +1491,7 @@ public final class SuperweaponService implements Listener {
                 }
                 if (!airborne && phaseTicks >= 5) {
                     if (aerialSlam && impacts == 1 && player.isOnGround()) {
-                        strikeNearby(player, current, aerialSlam ? 32 : 8, true, aerialSlam, new HashSet<>());
+                        strikeNearby(player, current, aerialSlam ? 12 : 8, true, aerialSlam, new HashSet<>());
                         XSound.matchXSound("ENTITY_GENERIC_EXPLODE").ifPresent(sound -> sound.play(player));
                         XSound.matchXSound("ENTITY_WARDEN_SONIC_BOOM").ifPresent(sound -> sound.play(player));
                         playSlamImpact(current, aerialSlam);
@@ -1479,16 +1544,16 @@ public final class SuperweaponService implements Listener {
                 particle.get(), center.clone().add(0, 0.8, 0), 1));
         if (aerialSlam) {
             XParticle.of("SCULK_SOUL").ifPresent(particle -> world.spawnParticle(
-                    particle.get(), center, 360, 3.6, 1.4, 3.6, 0.24));
+                    particle.get(), center, 180, 3.6, 1.4, 3.6, 0.24));
             XParticle.of("SOUL_FIRE_FLAME").ifPresent(particle -> world.spawnParticle(
-                    particle.get(), center, 240, 2.8, 1, 2.8, 0.07));
+                    particle.get(), center, 120, 2.8, 1, 2.8, 0.07));
             XParticle.of("SMOKE").ifPresent(particle -> world.spawnParticle(
-                    particle.get(), center, 280, 3.2, 1.2, 3.2, 0.16));
+                    particle.get(), center, 140, 3.2, 1.2, 3.2, 0.16));
         } else {
             XParticle.of("CLOUD").ifPresent(particle -> world.spawnParticle(
-                    particle.get(), center, 140, 1.4, 0.3, 1.4, 0.14));
+                    particle.get(), center, 70, 1.4, 0.3, 1.4, 0.14));
             XParticle.of("CRIT").ifPresent(particle -> world.spawnParticle(
-                    particle.get(), center.clone().add(0, 0.6, 0), 90, 1.2, 0.8, 1.2, 0.2));
+                    particle.get(), center.clone().add(0, 0.6, 0), 45, 1.2, 0.8, 1.2, 0.2));
         }
         XParticle.of(aerialSlam ? "SCULK_SOUL" : "END_ROD").ifPresent(particle -> {
             for (int level = 0; level < 7; level++) {
@@ -1513,10 +1578,10 @@ public final class SuperweaponService implements Listener {
                     cancel();
                     return;
                 }
-                double radius = aerialSlam ? (wave + 1) * (40.0 / waveCount) : (wave + 1) * (8.0 / waveCount);
+                double radius = aerialSlam ? (wave + 1) * (12.0 / waveCount) : (wave + 1) * (8.0 / waveCount);
                 double innerRadius = radius * 0.72;
                 double height = wave % 2 == 0 ? 0.08 : 0.45;
-                int pointCount = aerialSlam ? 84 : 48;
+                int pointCount = aerialSlam ? 42 : 24;
                 for (int point = 0; point < pointCount; point++) {
                     double angle = Math.PI * 2 * point / pointCount + wave * 0.12;
                     Location ringPoint = center.clone().add(Math.cos(angle) * radius, height,

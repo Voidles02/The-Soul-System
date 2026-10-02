@@ -17,6 +17,15 @@ superweapon:
     slam-millis: 300000
     activate-millis: 900000
     beam-millis: 600000
+  info-book:
+    title: 'Soul Weapons'
+    author: Souls
+    pages:
+      - "&5&lSOUL WEAPON FIELD GUIDE\n\n&7Learn the weapons, cooldowns, and optional Soul features. Cooldown values and feature states reflect this server's settings when opened."
+      - "&d&lBOOK OF BŌC\n\n&7Right-click: self-buffs.\nLeft-click: 5-second, 45-block beam followed by 3 shockwaves.\n\n&7Activation: &f{activate-cooldown}\nBeam: &f{beam-cooldown}"
+      - "&5&lTHE SARCULUM\n\n&7Sneak + left-click: steerable dash up to 25 blocks.\nSneak + right-click: slam. Airborne with a mace in your hotbar triggers an enhanced two-impact slam.\n\nDash: &f{dash-cooldown}\nSlam: &f{slam-cooldown}"
+      - "&b&lSOUL SYSTEMS\n\n&7Soul progression, mob rewards, player trading, fragments, Altars, and Shrines are configurable. Use &f/souls &7to view your balance."
+      - "&6&lOPTIONAL FEATURES\n\n&7Shop: {shop-status}\nAltar: {altar-status}\nPowers: {powers-status}\nBounties: {bounties-status}\nShrines: {shrines-status}\nRandom events: {events-status}\n\n&8Customize these pages in config.yml."
   artifacts:
     track-owners: true
     boc:

@@ -9,7 +9,7 @@ softdepend:
 commands:
   souls:
     description: View and manage Souls.
-    usage: /souls [stats|top|pay|give|take|set|remove <player> [amount|all]|inspect|convert|reload|sw|sw-cooldown <player> [dash|slam|activate|beam|all]|sw-cooldown set <dash|slam|activate|beam> <duration>|artifact|artifacts]
+    usage: /souls [stats|top|pay|give|take|set|remove <player> [amount|all]|inspect|convert|reload|sw|sw-info|sw-cooldown <player> [dash|slam|activate|beam|all]|sw-cooldown set <dash|slam|activate|beam> <duration>|artifact|artifacts]
     aliases:
       - soul
   guide:

@@ -112,7 +112,7 @@ public final class SoulAltarListener implements Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     public void onBreak(BlockBreakEvent event) {
         if (!structures.isStructureBlock(event.getBlock(), "altar")) {
             return;
