@@ -4,6 +4,8 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.EntityType;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.Locale;
+
 public final class SoulsConfig {
     private final JavaPlugin plugin;
 
@@ -15,7 +17,7 @@ public final class SoulsConfig {
     }
 
     public String databaseType() {
-        return plugin.getConfig().getString("database.type", "sqlite").toLowerCase();
+        return plugin.getConfig().getString("database.type", "sqlite").trim().toLowerCase(Locale.ROOT);
     }
 
     public String sqliteFile() {

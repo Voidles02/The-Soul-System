@@ -34,9 +34,17 @@ public final class SoulStatsGui {
     }
 
     public void open(Player player) {
-        souls.loadBalance(player.getUniqueId()).thenCombine(database.loadCombatStats(player.getUniqueId()),
-                (balance, stats) -> stats).thenAccept(stats -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+        database.loadCombatStats(player.getUniqueId()).exceptionally(error -> {
+            plugin.getLogger().warning("Could not load Soul combat stats for " + player.getUniqueId()
+                    + ": " + error.getMessage());
+            return null;
+        }).thenCombine(souls.loadBalance(player.getUniqueId()), (stats, balance) -> stats)
+                .thenAccept(stats -> plugin.getServer().getScheduler().runTask(plugin, () -> {
             if (player.isOnline()) {
+                if (!souls.isBalanceReady(player.getUniqueId())) {
+                    player.sendMessage(MessageService.color("&cYour Soul balance could not be loaded because the database is unavailable."));
+                    return;
+                }
                 player.openInventory(createInventory(player, stats));
             }
         })).exceptionally(error -> {
@@ -83,9 +91,10 @@ public final class SoulStatsGui {
         inventory.setItem(16, item("BOOK", "&e&lSoul Guide",
                 "&7Use &f/guide &7for a quick tutorial.",
                 "&7Earn Souls, reach tiers, and grow stronger.",
-                "&7Kills: &f" + stats.kills(),
-                "&7Deaths: &f" + stats.deaths(),
-                "&7K/D: &f" + String.format(java.util.Locale.US, "%.2f", stats.ratio())));
+                "&7Kills: " + (stats == null ? "&cUnavailable" : "&f" + stats.kills()),
+                "&7Deaths: " + (stats == null ? "&cUnavailable" : "&f" + stats.deaths()),
+                "&7K/D: " + (stats == null ? "&cUnavailable" : "&f"
+                        + String.format(java.util.Locale.US, "%.2f", stats.ratio()))));
         inventory.setItem(22, item("BARRIER", "&c&lClose",
                 "&7Click to close this menu."));
         return inventory;

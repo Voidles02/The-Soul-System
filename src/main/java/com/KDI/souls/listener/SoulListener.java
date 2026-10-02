@@ -90,7 +90,10 @@ public final class SoulListener implements Listener {
         Player victim = event.getEntity();
         Player killer = victim.getKiller();
         if (killer != null && !killer.getUniqueId().equals(victim.getUniqueId())) {
-            database.recordPvpResult(killer.getUniqueId(), victim.getUniqueId());
+            database.recordPvpResult(killer.getUniqueId(), victim.getUniqueId()).exceptionally(error -> {
+                plugin.getLogger().warning("Could not record PvP stats: " + error.getMessage());
+                return null;
+            });
         }
         if (config.lossEnabled() && config.worldEnabled(victim.getWorld().getName(), "pvp")) {
             java.util.UUID victimId = victim.getUniqueId();
@@ -145,6 +148,14 @@ public final class SoulListener implements Listener {
                     }
                     souls.loadBalance(killer.getUniqueId()).thenRun(() -> Bukkit.getScheduler().runTask(plugin,
                             () -> souls.addSouls(killer.getUniqueId(), reward, "pvp-kill")));
-                }));
+                })).exceptionally(error -> {
+                    plugin.getLogger().warning("Could not claim a PvP Soul reward: " + error.getMessage());
+                    Bukkit.getScheduler().runTask(plugin, () -> {
+                        if (killer.isOnline()) {
+                            messages.send(killer, "database-unavailable");
+                        }
+                    });
+                    return null;
+                });
     }
 }

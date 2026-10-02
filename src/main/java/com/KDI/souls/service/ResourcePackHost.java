@@ -27,7 +27,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public final class ResourcePackHost {
-    private static final String PACK_RESOURCE = "souls-resource-pack.zip";
+    private static final String PACK_RESOURCE = "resources/souls-resource-pack.zip";
     private static final String PACK_PATH = "/souls-resource-pack.zip";
     private static final String[] REQUIRED_FILES = {
             "pack.mcmeta",

@@ -313,7 +313,12 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
                         .replace("{player}", player.getName() == null ? entry.uuid().toString() : player.getName())
                         .replace("{souls}", String.valueOf(entry.balance())));
             }
-        }));
+        })).exceptionally(error -> {
+            plugin.getLogger().warning("Could not load the Souls leaderboard: " + error.getMessage());
+            plugin.getServer().getScheduler().runTask(plugin,
+                    () -> messages.send(sender, "database-unavailable"));
+            return null;
+        });
     }
 
     private void pay(CommandSender sender, String[] args) {
@@ -340,6 +345,10 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         }
         souls.loadBalance(player.getUniqueId()).thenCombine(souls.loadBalance(target.getUniqueId()),
                 (payerBalance, targetBalance) -> true).thenRun(() -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (!souls.isBalanceReady(player.getUniqueId()) || !souls.isBalanceReady(target.getUniqueId())) {
+                messages.send(sender, "database-unavailable");
+                return;
+            }
             SoulService.OperationResult result = souls.transfer(player.getUniqueId(), target.getUniqueId(), amount);
             if (!result.successful()) {
                 messages.send(sender, souls.getBalance(player.getUniqueId()) < amount ? "insufficient" : "max-reached",
@@ -368,6 +377,10 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         souls.loadBalance(player.getUniqueId()).thenRun(() -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (!souls.isBalanceReady(player.getUniqueId())) {
+                messages.send(player, "database-unavailable");
+                return;
+            }
             long before = souls.getBalance(player.getUniqueId());
             SoulService.OperationResult result = fragments.convert(player);
             if (!result.successful()) {
@@ -390,6 +403,10 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         }
         souls.loadBalance(target.getUniqueId()).thenRun(() -> plugin.getServer().getScheduler().runTask(plugin,
                 () -> {
+                    if (!souls.isBalanceReady(target.getUniqueId())) {
+                        messages.send(sender, "database-unavailable");
+                        return;
+                    }
                     LocalSoulStore.StoredData data = souls.localData(target.getUniqueId());
                     messages.send(sender, "inspect", Map.of("player", target.getName(),
                             "souls", souls.getBalance(target.getUniqueId())));
@@ -418,6 +435,10 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         souls.loadBalance(target.getUniqueId()).thenRun(() -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (!souls.isBalanceReady(target.getUniqueId())) {
+                messages.send(sender, "database-unavailable");
+                return;
+            }
             long before = souls.getBalance(target.getUniqueId());
             SoulService.OperationResult result = removeAll
                     ? souls.setSouls(target.getUniqueId(), 0)
@@ -445,6 +466,10 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         souls.loadBalance(target.getUniqueId()).thenRun(() -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (!souls.isBalanceReady(target.getUniqueId())) {
+                messages.send(sender, "database-unavailable");
+                return;
+            }
             SoulService.OperationResult result = switch (action) {
                 case GIVE -> souls.addSouls(target.getUniqueId(), amount, "admin-give");
                 case TAKE -> souls.loseSouls(target.getUniqueId(), amount, "admin-take");
@@ -463,8 +488,11 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         if (!requireAdmin(sender)) {
             return;
         }
-        plugin.reloadSettings();
-        messages.send(sender, "reload");
+        if (plugin.reloadSettings()) {
+            messages.send(sender, "reload");
+        } else {
+            messages.send(sender, "database-reload-failed");
+        }
     }
 
     private void textures(CommandSender sender) {

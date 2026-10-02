@@ -41,6 +41,7 @@ public final class SoulsPlugin extends JavaPlugin {
     private ResourcePackHost resourcePackHost;
     private MessageService messageService;
     private DatabaseManager databaseManager;
+    private volatile boolean databaseAvailable;
     private SoulService soulService;
     private FragmentService fragmentService;
     private SoulRecipeService recipeService;
@@ -62,10 +63,15 @@ public final class SoulsPlugin extends JavaPlugin {
         databaseManager = new DatabaseManager(this, soulsConfig);
         try {
             databaseManager.initialize();
+            databaseAvailable = true;
         } catch (Exception exception) {
             getLogger().severe("Could not initialize the Souls database: " + exception.getMessage());
-            getServer().getPluginManager().disablePlugin(this);
-            return;
+            if (!soulsConfig.localDataEnabled()) {
+                getLogger().severe("Local player storage is disabled; Souls cannot start without a database.");
+                getServer().getPluginManager().disablePlugin(this);
+                return;
+            }
+            getLogger().warning("Continuing with local player-data fallback. Database-backed leaderboards and combat stats may be unavailable.");
         }
 
         soulService = new SoulService(this, databaseManager, soulsConfig);
@@ -86,6 +92,25 @@ public final class SoulsPlugin extends JavaPlugin {
                 new com.KDI.souls.listener.SoulShrineListener(this, soulService, fragmentService, soulsConfig, messageService, structures), this);
         getServer().getScheduler().runTaskTimer(this,
                 () -> Bukkit.getOnlinePlayers().forEach(soulService::ensureBoost), 40L, 40L);
+        getServer().getScheduler().runTaskTimerAsynchronously(this, () -> {
+            if (databaseManager.isAvailable()) {
+                databaseAvailable = true;
+                return;
+            }
+            databaseAvailable = false;
+            databaseManager.retryInitialize().thenAccept(recovered -> {
+                if (!recovered) {
+                    return;
+                }
+                databaseAvailable = true;
+                getLogger().info("Souls database connection recovered; synchronizing cached balances.");
+                soulService.persistAll().exceptionally(error -> {
+                    getLogger().severe("Could not synchronize cached Souls balances after database recovery: "
+                            + error.getMessage());
+                    return null;
+                });
+            });
+        }, 1200L, 1200L);
 
         SuperweaponService superweapons = new SuperweaponService(this, altar, messageService);
         getServer().getPluginManager().registerEvents(superweapons, this);
@@ -228,7 +253,9 @@ public final class SoulsPlugin extends JavaPlugin {
         logBannerLine("Content      Altars, shrines, recipes");
         logBannerLine("Weapons      Sarculum and Book of Bōc");
         logBannerLine("Interfaces   Guide, stats, commands");
-        logBannerLine("Storage      Database initialized");
+        logBannerLine("Storage      " + (databaseAvailable
+                ? "Database initialized"
+                : "Database unavailable; local fallback active"));
         logBannerLine("");
         logBannerLine("STARTUP CHECK  |  " + updatedFiles.size() + " file(s) updated");
         if (updatedFiles.isEmpty()) {
@@ -263,11 +290,20 @@ public final class SoulsPlugin extends JavaPlugin {
         }
     }
 
-    public void reloadSettings() {
+    public boolean reloadSettings() {
         reloadConfig();
         soulsConfig.reload();
         messageService.reload();
         recipeService.registerRecipes();
+        try {
+            databaseManager.initialize();
+            databaseAvailable = true;
+            return true;
+        } catch (Exception exception) {
+            databaseAvailable = false;
+            getLogger().severe("Could not initialize the reloaded Souls database settings: " + exception.getMessage());
+            return false;
+        }
     }
 
     public ResourcePackHost.AuditResult repairResourcePack() {

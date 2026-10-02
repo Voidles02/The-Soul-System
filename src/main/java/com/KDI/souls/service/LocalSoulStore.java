@@ -42,15 +42,16 @@ public final class LocalSoulStore {
             long maxSouls = Long.parseLong(value(lines, "max-souls", "0"));
             double percentage = Double.parseDouble(value(lines, "percentage", "0"));
             long lastSaved = Long.parseLong(value(lines, "last-saved", "0"));
+            boolean databasePending = Boolean.parseBoolean(value(lines, "database-pending", "false"));
             return new StoredData(uuid, unquote(value(lines, "name", "")), souls, maxSouls,
-                    percentage, lastSaved, unquote(value(lines, "last-save-reason", "unknown")));
+                    percentage, lastSaved, unquote(value(lines, "last-save-reason", "unknown")), databasePending);
         } catch (Exception exception) {
             plugin.getLogger().warning("Could not read local soul data for " + uuid + ": " + exception.getMessage());
             return null;
         }
     }
 
-    public void save(UUID uuid, String name, long souls, long maxSouls, String reason) {
+    public void save(UUID uuid, String name, long souls, long maxSouls, String reason, boolean databasePending) {
         if (!config.localDataEnabled()) {
             return;
         }
@@ -66,6 +67,7 @@ public final class LocalSoulStore {
                     + "percentage: " + String.format(java.util.Locale.ROOT, "%.2f", percentage) + "\n"
                     + "last-saved: " + now + "\n"
                     + "last-saved-utc: " + Instant.ofEpochMilli(now) + "\n"
+                    + "database-pending: " + databasePending + "\n"
                     + "last-save-reason: " + quote(reason) + "\n";
             Path target = playerFile(uuid).toPath();
             Path temporary = target.resolveSibling(target.getFileName() + ".tmp");
@@ -111,6 +113,6 @@ public final class LocalSoulStore {
     }
 
     public record StoredData(UUID uuid, String name, long souls, long maxSouls, double percentage,
-                             long lastSaved, String lastSaveReason) {
+                             long lastSaved, String lastSaveReason, boolean databasePending) {
     }
 }

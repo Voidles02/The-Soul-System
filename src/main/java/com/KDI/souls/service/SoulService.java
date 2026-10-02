@@ -28,6 +28,7 @@ public final class SoulService {
     private final Map<UUID, Long> balances = new ConcurrentHashMap<>();
     private final Map<UUID, String> playerNames = new ConcurrentHashMap<>();
     private final Map<UUID, CompletableFuture<Long>> loading = new ConcurrentHashMap<>();
+    private final Set<UUID> unresolvedBalances = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Set<PotionEffectType>> ownedBoostEffects = new ConcurrentHashMap<>();
     private final Map<UUID, Map<PotionEffectType, PotionEffect>> preservedBoostEffects = new ConcurrentHashMap<>();
 
@@ -45,15 +46,22 @@ public final class SoulService {
         }
         return loading.computeIfAbsent(uuid, key -> database.loadBalance(key).handle((databaseValue, error) -> {
             LocalSoulStore.StoredData local = localStore.load(key);
-            long value = local != null ? local.souls() : error == null ? databaseValue : 0L;
             if (error != null && local == null) {
-                plugin.getLogger().warning("Could not load souls for " + key + "; using local default: "
-                        + error.getMessage());
+                unresolvedBalances.add(key);
+                plugin.getLogger().warning("Could not load souls for " + key
+                        + " and no local backup exists; balance changes are blocked until the database recovers.");
+                return 0L;
             }
+            unresolvedBalances.remove(key);
+            boolean useLocal = error != null || local != null && local.databasePending();
+            long value = useLocal ? local == null ? 0L : local.souls() : databaseValue;
             long safeValue = Math.max(0, Math.min(config.maxBalance(), value));
             balances.put(key, safeValue);
-            localStore.save(key, playerNames.getOrDefault(key, local == null ? "" : local.name()),
-                    safeValue, config.maxBalance(), "load");
+            String name = playerNames.getOrDefault(key, local == null ? "" : local.name());
+            localStore.save(key, name, safeValue, config.maxBalance(), "load", useLocal);
+            if (error == null && local != null && local.databasePending()) {
+                syncPendingBalance(key, name, safeValue);
+            }
             return safeValue;
         }).whenComplete((value, error) -> loading.remove(key)));
     }
@@ -66,6 +74,10 @@ public final class SoulService {
 
     public long getBalance(UUID uuid) {
         return balances.getOrDefault(uuid, 0L);
+    }
+
+    public boolean isBalanceReady(UUID uuid) {
+        return !unresolvedBalances.contains(uuid);
     }
 
     public long getRemainingCapacity(UUID uuid) {
@@ -88,7 +100,7 @@ public final class SoulService {
     }
 
     public OperationResult addSouls(UUID uuid, long requested, String reason) {
-        if (requested <= 0) {
+        if (unresolvedBalances.contains(uuid) || requested <= 0) {
             return OperationResult.failure();
         }
         SoulEarnEvent event = new SoulEarnEvent(uuid, requested, reason);
@@ -109,7 +121,7 @@ public final class SoulService {
     }
 
     public OperationResult spendSouls(UUID uuid, long requested, String reason) {
-        if (requested <= 0) {
+        if (unresolvedBalances.contains(uuid) || requested <= 0) {
             return OperationResult.failure();
         }
         SoulSpendEvent event = new SoulSpendEvent(uuid, requested, reason);
@@ -129,7 +141,7 @@ public final class SoulService {
     }
 
     public OperationResult loseSouls(UUID uuid, long requested, String reason) {
-        if (requested <= 0) {
+        if (unresolvedBalances.contains(uuid) || requested <= 0) {
             return OperationResult.failure();
         }
         SoulLoseEvent event = new SoulLoseEvent(uuid, requested, reason);
@@ -149,6 +161,9 @@ public final class SoulService {
     }
 
     public OperationResult setSouls(UUID uuid, long amount) {
+        if (unresolvedBalances.contains(uuid)) {
+            return OperationResult.failure();
+        }
         long balance = Math.max(0, Math.min(config.maxBalance(), amount));
         balances.put(uuid, balance);
         persist(uuid, balance, "admin-set");
@@ -157,7 +172,8 @@ public final class SoulService {
     }
 
     public OperationResult transfer(UUID payer, UUID recipient, long requested) {
-        if (payer.equals(recipient) || requested <= 0) {
+        if (unresolvedBalances.contains(payer) || unresolvedBalances.contains(recipient)
+                || payer.equals(recipient) || requested <= 0) {
             return OperationResult.failure();
         }
         SoulSpendEvent spendEvent = new SoulSpendEvent(payer, requested, "pay");
@@ -192,8 +208,32 @@ public final class SoulService {
     }
 
     private CompletableFuture<Void> persist(UUID uuid, long balance, String reason) {
-        localStore.save(uuid, playerNames.getOrDefault(uuid, ""), balance, config.maxBalance(), reason);
-        return database.saveBalance(uuid, balance);
+        String name = playerNames.getOrDefault(uuid, "");
+        localStore.save(uuid, name, balance, config.maxBalance(), reason, true);
+        if (!database.isAvailable()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return database.saveBalance(uuid, balance).whenComplete((ignored, error) -> {
+            if (error == null) {
+                localStore.save(uuid, name, balance, config.maxBalance(), reason, false);
+            } else {
+                plugin.getLogger().warning("Could not persist souls for " + uuid
+                        + "; the local copy is marked for database recovery: " + error.getMessage());
+                localStore.save(uuid, name, balance, config.maxBalance(), reason, true);
+            }
+        });
+    }
+
+    private void syncPendingBalance(UUID uuid, String name, long balance) {
+        database.saveBalance(uuid, balance).whenComplete((ignored, error) -> {
+            if (error == null) {
+                localStore.save(uuid, name, balance, config.maxBalance(), "database-recovery", false);
+            } else {
+                plugin.getLogger().warning("Could not synchronize recovered local souls for " + uuid
+                        + ": " + error.getMessage());
+                localStore.save(uuid, name, balance, config.maxBalance(), "database-recovery", true);
+            }
+        });
     }
 
     public void applyBoost(UUID uuid) {

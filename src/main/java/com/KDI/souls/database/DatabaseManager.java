@@ -22,6 +22,7 @@ import java.util.concurrent.TimeUnit;
 public final class DatabaseManager {
     private final JavaPlugin plugin;
     private final SoulsConfig config;
+    private volatile boolean available;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "souls-database");
         thread.setDaemon(true);
@@ -34,7 +35,12 @@ public final class DatabaseManager {
     }
 
     public void initialize() throws SQLException {
-        if (config.databaseType().equals("sqlite")) {
+        available = false;
+        String type = config.databaseType();
+        if (!type.equals("sqlite") && !type.equals("mariadb")) {
+            throw new SQLException("Unsupported database.type '" + type + "'. Use 'sqlite' or 'mariadb'.");
+        }
+        if (type.equals("sqlite")) {
             File databaseFile = new File(plugin.getDataFolder(), config.sqliteFile());
             File parent = databaseFile.getParentFile();
             if (parent != null && !parent.isDirectory() && !parent.mkdirs() && !parent.isDirectory()) {
@@ -46,7 +52,26 @@ public final class DatabaseManager {
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS soul_fragments (uuid VARCHAR(36) PRIMARY KEY, fragments BIGINT NOT NULL)");
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS soul_pvp (killer_uuid VARCHAR(36) NOT NULL, victim_uuid VARCHAR(36) NOT NULL, last_reward BIGINT NOT NULL, reward_count BIGINT NOT NULL, PRIMARY KEY (killer_uuid, victim_uuid))");
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS soul_combat_stats (uuid VARCHAR(36) PRIMARY KEY, kills BIGINT NOT NULL, deaths BIGINT NOT NULL)");
+            available = true;
+        } catch (SQLException exception) {
+            available = false;
+            throw exception;
         }
+    }
+
+    public CompletableFuture<Boolean> retryInitialize() {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                initialize();
+                return true;
+            } catch (SQLException exception) {
+                return false;
+            }
+        }, executor);
+    }
+
+    public boolean isAvailable() {
+        return available;
     }
 
     private Connection connection() throws SQLException {
@@ -65,9 +90,12 @@ public final class DatabaseManager {
                  PreparedStatement statement = connection.prepareStatement("SELECT souls FROM souls_balances WHERE uuid = ?")) {
                 statement.setString(1, uuid.toString());
                 try (ResultSet result = statement.executeQuery()) {
-                    return result.next() ? result.getLong(1) : 0L;
+                    long balance = result.next() ? result.getLong(1) : 0L;
+                    available = true;
+                    return balance;
                 }
             } catch (SQLException exception) {
+                available = false;
                 throw new CompletionException(exception);
             }
         }, executor);
@@ -81,7 +109,9 @@ public final class DatabaseManager {
                 statement.setString(1, uuid.toString());
                 statement.setLong(2, balance);
                 statement.executeUpdate();
+                available = true;
             } catch (SQLException exception) {
+                available = false;
                 throw new CompletionException(exception);
             }
         }, executor);
@@ -99,8 +129,10 @@ public final class DatabaseManager {
                         entries.add(new LeaderboardEntry(UUID.fromString(result.getString(1)), result.getLong(2)));
                     }
                 }
+                available = true;
                 return entries;
             } catch (SQLException | IllegalArgumentException exception) {
+                available = false;
                 throw new CompletionException(exception);
             }
         }, executor);
@@ -141,6 +173,7 @@ public final class DatabaseManager {
                         upsert.executeUpdate();
                     }
                     connection.commit();
+                    available = true;
                     return reward;
                 } catch (Exception exception) {
                     connection.rollback();
@@ -149,6 +182,7 @@ public final class DatabaseManager {
                     connection.setAutoCommit(true);
                 }
             } catch (Exception exception) {
+                available = false;
                 throw new CompletionException(exception);
             }
         }, executor);
@@ -162,11 +196,13 @@ public final class DatabaseManager {
                     incrementCombatStat(connection, killer, "kills");
                     incrementCombatStat(connection, victim, "deaths");
                     connection.commit();
+                    available = true;
                 } catch (Exception exception) {
                     connection.rollback();
                     throw exception;
                 }
             } catch (Exception exception) {
+                available = false;
                 throw new CompletionException(exception);
             }
         }, executor);
@@ -179,9 +215,14 @@ public final class DatabaseManager {
                          "SELECT kills, deaths FROM soul_combat_stats WHERE uuid = ?")) {
                 statement.setString(1, uuid.toString());
                 try (ResultSet result = statement.executeQuery()) {
-                    return result.next() ? new CombatStats(result.getLong(1), result.getLong(2)) : new CombatStats(0, 0);
+                    CombatStats stats = result.next()
+                            ? new CombatStats(result.getLong(1), result.getLong(2))
+                            : new CombatStats(0, 0);
+                    available = true;
+                    return stats;
                 }
             } catch (SQLException exception) {
+                available = false;
                 throw new CompletionException(exception);
             }
         }, executor);
@@ -210,6 +251,7 @@ public final class DatabaseManager {
     }
 
     public void close() {
+        available = false;
         executor.shutdown();
         try {
             if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
