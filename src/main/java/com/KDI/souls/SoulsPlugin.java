@@ -56,7 +56,7 @@ public final class SoulsPlugin extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(
                 new SoulListener(this, soulService, fragmentService, databaseManager, soulsConfig, messageService), this);
-        getServer().getPluginManager().registerEvents(new SoulStatsListener(), this);
+        getServer().getPluginManager().registerEvents(new SoulStatsListener(guideService), this);
         getServer().getPluginManager().registerEvents(new GuideListener(guideService), this);
         com.KDI.souls.listener.SoulAltarListener altar =
                 new com.KDI.souls.listener.SoulAltarListener(this, soulService, soulsConfig, messageService, structures);

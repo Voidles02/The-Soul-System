@@ -516,7 +516,7 @@ public final class SoulAltarListener implements Listener {
         refreshSoulAttributes(item);
     }
 
-    public void damageFromAbility(Player target, Player attacker, double damage) {
+    public void damageFromAbility(LivingEntity target, Player attacker, double damage) {
         abilityAttackers.add(attacker.getUniqueId());
         try {
             target.damage(damage, attacker);

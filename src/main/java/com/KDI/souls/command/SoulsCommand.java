@@ -23,6 +23,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 public final class SoulsCommand implements CommandExecutor, TabCompleter {
     private final SoulsPlugin plugin;
@@ -74,6 +76,8 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             case "reload" -> reload(sender);
             case "sw" -> openSuperweapons(sender);
             case "sw-cooldown" -> superweaponCooldown(sender, args);
+            case "artifact" -> registerArtifacts(sender);
+            case "artifacts" -> artifacts(sender, args);
             default -> messages.sendList(sender, "help");
         }
         return true;
@@ -100,7 +104,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
                 return;
             }
             String ability = args[2].toLowerCase(Locale.ROOT);
-            if (!List.of("dash", "slam", "activate").contains(ability)) {
+            if (!List.of("dash", "slam", "activate", "beam").contains(ability)) {
                 messages.send(sender, "sw-cooldown-usage");
                 return;
             }
@@ -120,7 +124,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         String ability = args.length == 3 ? args[2].toLowerCase() : "all";
-        if (!List.of("dash", "slam", "activate", "all").contains(ability)) {
+        if (!List.of("dash", "slam", "activate", "beam", "all").contains(ability)) {
             messages.send(sender, "sw-cooldown-usage");
             return;
         }
@@ -131,8 +135,76 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         }
         superweapons.clearCooldown(target, ability);
         messages.send(sender, "sw-cooldown-cleared", Map.of(
-                "ability", ability.equals("all") ? "Dash, Slam, and Activate" : ability,
+                "ability", ability.equals("all") ? "Dash, Slam, Activate, and Beam" : ability,
                 "player", target.getName()));
+    }
+
+    private void artifacts(CommandSender sender, String[] args) {
+        if (!requireAdmin(sender)) {
+            return;
+        }
+        if (!superweapons.artifactTrackingEnabled()) {
+            messages.send(sender, "sw-artifact-tracking-disabled");
+            return;
+        }
+        if (args.length == 1 && sender instanceof Player player) {
+            superweapons.openArtifactViewer(player);
+            return;
+        }
+        if (args.length == 1 && !(sender instanceof Player)) {
+            showArtifactHistory(sender, "boc", "The Book of Bōc");
+            showArtifactHistory(sender, "sarculum", "The Sarculum");
+            return;
+        }
+        if (args.length != 2) {
+            messages.send(sender, "sw-artifacts-usage");
+            return;
+        }
+        String artifact = args[1].toLowerCase(Locale.ROOT);
+        if (artifact.equals("book")) artifact = "boc";
+        if (!List.of("boc", "sarculum").contains(artifact)) {
+            messages.send(sender, "sw-artifacts-usage");
+            return;
+        }
+        if (sender instanceof Player player) {
+            superweapons.openArtifactHistory(player, artifact);
+            return;
+        }
+        showArtifactHistory(sender, artifact, artifact.equals("boc") ? "The Book of Bōc" : "The Sarculum");
+    }
+
+    private void registerArtifacts(CommandSender sender) {
+        if (!requireAdmin(sender)) {
+            return;
+        }
+        if (!superweapons.artifactTrackingEnabled()) {
+            messages.send(sender, "sw-artifact-tracking-disabled");
+            return;
+        }
+        superweapons.registerOnlineArtifactOwnerships();
+        messages.send(sender, "sw-artifacts-registered");
+    }
+
+    private void showArtifactHistory(CommandSender sender, String id, String name) {
+        messages.send(sender, "sw-artifacts-history-header", Map.of("artifact", name));
+        List<SuperweaponService.ArtifactHistoryEntry> history = superweapons.artifactHistory(id);
+        boolean hasCurrent = false;
+        for (SuperweaponService.ArtifactHistoryEntry entry : history) {
+            if (entry.current()) {
+                hasCurrent = true;
+                messages.send(sender, "sw-artifacts-current", Map.of(
+                        "player", entry.ownerName(), "duration", entry.duration()));
+            }
+        }
+        if (!hasCurrent) {
+            messages.send(sender, "sw-artifacts-none");
+        }
+        for (SuperweaponService.ArtifactHistoryEntry entry : history) {
+            if (!entry.current()) {
+                messages.send(sender, "sw-artifacts-past", Map.of(
+                        "player", entry.ownerName(), "duration", entry.duration()));
+            }
+        }
     }
 
     private Long parseCooldownDuration(String value) {
@@ -145,33 +217,64 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         } else if (normalized.endsWith("second")) {
             multiplier = 1_000L;
             amount = normalized.substring(0, normalized.length() - "second".length());
+        } else if (normalized.endsWith("secs")) {
+            multiplier = 1_000L;
+            amount = normalized.substring(0, normalized.length() - "secs".length());
+        } else if (normalized.endsWith("sec")) {
+            multiplier = 1_000L;
+            amount = normalized.substring(0, normalized.length() - "sec".length());
+        } else if (normalized.endsWith("s")) {
+            multiplier = 1_000L;
+            amount = normalized.substring(0, normalized.length() - 1);
         } else if (normalized.endsWith("minutes")) {
             multiplier = 60_000L;
             amount = normalized.substring(0, normalized.length() - "minutes".length());
         } else if (normalized.endsWith("minute")) {
             multiplier = 60_000L;
             amount = normalized.substring(0, normalized.length() - "minute".length());
+        } else if (normalized.endsWith("mins")) {
+            multiplier = 60_000L;
+            amount = normalized.substring(0, normalized.length() - "mins".length());
+        } else if (normalized.endsWith("min")) {
+            multiplier = 60_000L;
+            amount = normalized.substring(0, normalized.length() - "min".length());
+        } else if (normalized.endsWith("m")) {
+            multiplier = 60_000L;
+            amount = normalized.substring(0, normalized.length() - 1);
         } else if (normalized.endsWith("hours")) {
             multiplier = 3_600_000L;
             amount = normalized.substring(0, normalized.length() - "hours".length());
         } else if (normalized.endsWith("hour")) {
             multiplier = 3_600_000L;
             amount = normalized.substring(0, normalized.length() - "hour".length());
+        } else if (normalized.endsWith("hrs")) {
+            multiplier = 3_600_000L;
+            amount = normalized.substring(0, normalized.length() - "hrs".length());
+        } else if (normalized.endsWith("hr")) {
+            multiplier = 3_600_000L;
+            amount = normalized.substring(0, normalized.length() - "hr".length());
+        } else if (normalized.endsWith("h")) {
+            multiplier = 3_600_000L;
+            amount = normalized.substring(0, normalized.length() - 1);
         } else if (normalized.endsWith("days")) {
             multiplier = 86_400_000L;
             amount = normalized.substring(0, normalized.length() - "days".length());
         } else if (normalized.endsWith("day")) {
             multiplier = 86_400_000L;
             amount = normalized.substring(0, normalized.length() - "day".length());
+        } else if (normalized.endsWith("d")) {
+            multiplier = 86_400_000L;
+            amount = normalized.substring(0, normalized.length() - 1);
         } else {
             return null;
         }
         try {
-            long count = Long.parseLong(amount);
-            if (count <= 0) {
+            long durationMillis = new BigDecimal(amount).multiply(BigDecimal.valueOf(multiplier))
+                    .setScale(0, RoundingMode.CEILING).longValueExact();
+            if (durationMillis <= 0) {
                 return null;
             }
-            return Math.multiplyExact(count, multiplier);
+            return durationMillis;
         } catch (NumberFormatException | ArithmeticException exception) {
             return null;
         }
@@ -391,8 +494,9 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "convert", "give", "take", "set", "remove", "inspect", "reload", "sw", "sw-cooldown").stream()
-                    .filter(value -> !(value.equals("sw") || value.equals("sw-cooldown")) || sender.hasPermission("souls.admin"))
+            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "convert", "give", "take", "set", "remove", "inspect", "reload", "sw", "sw-cooldown", "artifact", "artifacts").stream()
+                    .filter(value -> !(value.equals("sw") || value.equals("sw-cooldown") || value.equals("artifact") || value.equals("artifacts"))
+                            || sender.hasPermission("souls.admin"))
                     .filter(value -> value.startsWith(args[0].toLowerCase())).toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("sw-cooldown")
@@ -411,15 +515,15 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         if (args.length == 3 && args[0].equalsIgnoreCase("sw-cooldown")
                 && sender.hasPermission("souls.admin")) {
             if (args[1].equalsIgnoreCase("set")) {
-                return List.of("dash", "slam", "activate").stream()
+                return List.of("dash", "slam", "activate", "beam").stream()
                         .filter(value -> value.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
             }
-            return List.of("dash", "slam", "activate", "all").stream()
+            return List.of("dash", "slam", "activate", "beam", "all").stream()
                     .filter(value -> value.startsWith(args[2].toLowerCase())).toList();
         }
         if (args.length == 4 && args[0].equalsIgnoreCase("sw-cooldown")
                 && args[1].equalsIgnoreCase("set") && sender.hasPermission("souls.admin")) {
-            return List.of("20seconds", "20minutes", "20hours", "20days").stream()
+            return List.of("20s", "20m", "20h", "20d", "20seconds", "20minutes", "20hours", "20days").stream()
                     .filter(value -> value.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
         }
         if (args.length == 2 && List.of("pay", "give", "take", "set", "remove", "inspect").contains(args[0].toLowerCase())) {

@@ -16,6 +16,13 @@ superweapon:
     dash-millis: 120000
     slam-millis: 300000
     activate-millis: 900000
+    beam-millis: 600000
+  artifacts:
+    track-owners: true
+    boc:
+      enabled: true
+    sarculum:
+      enabled: true
 
 local-data:
   enabled: true

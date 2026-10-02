@@ -169,7 +169,27 @@ public final class GuideService {
                         + "&7Altar not opening? &fUse the crafted marked Altar and verify &fsouls.altar&7.\n"
                         + "&7Shrine not working? &fUse the crafted marked Beacon, right-click the block, and verify &fsouls.shrine&7.\n"
                         + "&7Progress missing? &fConfirm the database file and check the server log for database errors.\n\n"
-                        + "For configuration changes, reload only when safe and restart after database or recipe changes.")
+                        + "For configuration changes, reload only when safe and restart after database or recipe changes."),
+                page("&5&lBOOK OF BŌC", "&8A powerful superweapon\n\n"
+                        + "The Book of Bōc is an admin-granted artifact. Use &f/souls sw &7to open the superweapon menu and receive it.\n\n"
+                        + "Right-click to invoke the book's self-effects. Left-click to channel its beam, followed by a shockwave.\n\n"
+                        + "The wielder is immune to damage from both attacks."),
+                page("&5&lTHE SARCULUM", "&8A close-range superweapon\n\n"
+                        + "Dash hits deal &c16.5 damage (8.25 in-game hearts)&7. Slam hits deal &c24 damage (12 in-game hearts)&7. An airborne slam with a mace in your hotbar deals &c36 damage (18 in-game hearts)&7 and has a 4x splash radius."),
+                page("&5&lSONIC BEAM", "&8Long-range attack\n\n"
+                        + "Hold The Book of Bōc and left-click to fire a thick beam up to &b45 blocks&7. It lasts 5 seconds and damages players directly in its path for &c2.5 hearts every 50 milliseconds&7.\n\n"
+                        + "The beam has a &b10-minute default cooldown&7. The cooldown appears in the action-bar HUD."),
+                page("&5&lTHREE SHOCKWAVES", "&8A follow-up attack\n\n"
+                        + "After the beam ends, three expanding shockwaves strike nearby mobs and players. Each shock deals up to &c8 hearts &7within 2 blocks, decreasing with distance to &c3 hearts &7at 12 blocks.\n\n"
+                        + "Each target hit receives &9Slowness II &7for 3 seconds. The wielder is not harmed by the shockwaves."),
+                page("&e&lARTIFACT COOLDOWNS", "&8Admin controls\n\n"
+                        + "Admins can clear a player's artifact cooldowns with &f/souls sw-cooldown <player> [beam|dash|slam|activate|all]&7.\n\n"
+                        + "Set a cooldown with &f/souls sw-cooldown set <beam|dash|slam|activate> <duration>&7. Examples: &f20s&7, &f60seconds&7, &f2m&7, &f1.5h&7, or &f2d&7.\n\n"
+                        + "Seconds, minutes, hours, and days accept short or full suffixes. The Book beam defaults to 10 minutes."),
+                page("&b&lARTIFACT OWNERS", "&8Find artifact holders\n\n"
+                        + "Use &f/souls artifacts &7to view which players own each tracked artifact. An artifact with no current owner is left blank.\n\n"
+                        + "Configure &fsuperweapon.artifacts.track-owners&7, &fsuperweapon.artifacts.boc.enabled&7, and &fsuperweapon.artifacts.sarculum.enabled &7in config.yml. Ownership records are saved in &fartifacts.yml&7.\n\n"
+                        + "Use &f/souls reload &7after changing settings. Admin access is required for ownership lookup.")
         );
         book.setItemMeta(meta);
         player.openBook(book);
