@@ -8,6 +8,8 @@ import com.cryptomorin.xseries.XPotion;
 import com.cryptomorin.xseries.XSound;
 import com.cryptomorin.xseries.particles.XParticle;
 import lombok.Getter;
+import net.md_5.bungee.api.ChatMessageType;
+import net.md_5.bungee.api.chat.TextComponent;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.NamespacedKey;
@@ -69,6 +71,9 @@ import java.time.format.DateTimeFormatter;
 public final class SuperweaponService implements Listener {
     private static final int BOC_CUSTOM_MODEL_DATA = 19001;
     private static final int SARCULUM_CUSTOM_MODEL_DATA = 19002;
+    private static final int COOLDOWN_BAR_CELLS = 2;
+    private static final int COOLDOWN_BAR_LEVELS = 8;
+    private static final String[] COOLDOWN_PARTIAL_BLOCKS = {"", "▏", "▎", "▍", "▌", "▋", "▊", "▉"};
     private static final DateTimeFormatter ARTIFACT_DATE_FORMAT = DateTimeFormatter
             .ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
     private final JavaPlugin plugin;
@@ -1108,11 +1113,12 @@ public final class SuperweaponService implements Listener {
 
     private void startCooldownHud(Player player) {
         UUID uuid = player.getUniqueId();
-        BukkitTask currentTask = cooldownHudTasks.remove(uuid);
-        if (currentTask != null) {
-            currentTask.cancel();
+        if (cooldownHudTasks.containsKey(uuid)) {
+            return;
         }
         BukkitTask task = new BukkitRunnable() {
+            private boolean hudVisible;
+
             @Override
             public void run() {
                 if (!player.isOnline()) {
@@ -1122,6 +1128,7 @@ public final class SuperweaponService implements Listener {
                 }
                 long now = System.currentTimeMillis();
                 refreshHeldArtifactCooldown(player, now);
+                hudVisible = sendCooldownActionBar(player, now, hudVisible);
                 if (player.getPersistentDataContainer().getOrDefault(dashCooldownKey, PersistentDataType.LONG, 0L) <= now
                         && player.getPersistentDataContainer().getOrDefault(slamCooldownKey, PersistentDataType.LONG, 0L) <= now
                         && player.getPersistentDataContainer().getOrDefault(activateCooldownKey, PersistentDataType.LONG, 0L) <= now
@@ -1130,8 +1137,65 @@ public final class SuperweaponService implements Listener {
                     cancel();
                 }
             }
-        }.runTaskTimer(plugin, 0L, 10L);
+        }.runTaskTimer(plugin, 0L, 2L);
         cooldownHudTasks.put(uuid, task);
+    }
+
+    private boolean sendCooldownActionBar(Player player, long now, boolean hudVisible) {
+        String heldArtifact = artifact(player.getInventory().getItemInMainHand());
+        StringBuilder cooldowns = new StringBuilder();
+        if ("sarculum".equals(heldArtifact)) {
+            appendCooldownBar(cooldowns, player, "D", dashCooldownKey, "dash", 2 * 60 * 1000L, now, "&b", "&3");
+            appendCooldownBar(cooldowns, player, "S", slamCooldownKey, "slam", 5 * 60 * 1000L, now, "&6", "&e");
+        } else if ("boc".equals(heldArtifact)) {
+            appendCooldownBar(cooldowns, player, "A", activateCooldownKey, "activate", 15 * 60 * 1000L, now, "&d", "&5");
+            appendCooldownBar(cooldowns, player, "B", beamCooldownKey, "beam", 10 * 60 * 1000L, now, "&c", "&4");
+        }
+        if (cooldowns.length() == 0) {
+            if (hudVisible) {
+                player.spigot().sendMessage(ChatMessageType.ACTION_BAR, new TextComponent(""));
+            }
+            return false;
+        }
+        player.spigot().sendMessage(ChatMessageType.ACTION_BAR, TextComponent.fromLegacyText(cooldowns.toString()));
+        return true;
+    }
+
+    private void appendCooldownBar(StringBuilder cooldowns, Player player, String label, NamespacedKey key,
+                                   String ability, long defaultDurationMillis, long now,
+                                   String labelColor, String barColor) {
+        if (player.getPersistentDataContainer().getOrDefault(key, PersistentDataType.LONG, 0L) <= now) {
+            return;
+        }
+        if (cooldowns.length() > 0) {
+            cooldowns.append(' ');
+        }
+        cooldowns.append(cooldownBar(player, label, key, ability, defaultDurationMillis, now, labelColor, barColor));
+    }
+
+    private String cooldownBar(Player player, String label, NamespacedKey key, String ability,
+                               long defaultDurationMillis, long now, String labelColor, String barColor) {
+        long expiresAt = player.getPersistentDataContainer().getOrDefault(key, PersistentDataType.LONG, 0L);
+        long remainingMillis = Math.max(0L, expiresAt - now);
+        long durationMillis = cooldownDurationMillis(ability, defaultDurationMillis);
+        int totalUnits = COOLDOWN_BAR_CELLS * COOLDOWN_BAR_LEVELS;
+        int filledUnits = remainingMillis == 0L || durationMillis <= 0L
+                ? totalUnits
+                : (int) Math.min(totalUnits, Math.max(0L,
+                        Math.round((double) Math.max(0L, durationMillis - remainingMillis) / durationMillis * totalUnits)));
+        String fillColor = filledUnits == totalUnits ? "&a" : barColor;
+        StringBuilder bar = new StringBuilder(labelColor).append(label);
+        for (int cell = 0; cell < COOLDOWN_BAR_CELLS; cell++) {
+            int cellFill = Math.min(COOLDOWN_BAR_LEVELS, Math.max(0, filledUnits - cell * COOLDOWN_BAR_LEVELS));
+            if (cellFill == COOLDOWN_BAR_LEVELS) {
+                bar.append(fillColor).append('█');
+            } else if (cellFill > 0) {
+                bar.append(fillColor).append(COOLDOWN_PARTIAL_BLOCKS[cellFill]);
+            } else {
+                bar.append("&8░");
+            }
+        }
+        return MessageService.color(bar.toString());
     }
 
     private void refreshHeldArtifactCooldown(Player player, long now) {
