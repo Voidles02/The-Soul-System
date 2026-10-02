@@ -21,7 +21,11 @@ import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.ServerLoadEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.entity.Player;
+
+import java.util.HexFormat;
 
 public final class SoulsPlugin extends JavaPlugin {
     private SoulsConfig soulsConfig;
@@ -81,6 +85,11 @@ public final class SoulsPlugin extends JavaPlugin {
 
         getServer().getPluginManager().registerEvents(new Listener() {
             @EventHandler
+            public void onPlayerJoin(PlayerJoinEvent event) {
+                sendRequiredResourcePack(event.getPlayer());
+            }
+
+            @EventHandler
             public void onServerLoad(ServerLoadEvent event) {
                 if (event.getType() != ServerLoadEvent.LoadType.STARTUP) {
                     return;
@@ -91,6 +100,34 @@ public final class SoulsPlugin extends JavaPlugin {
                 });
             }
         }, this);
+    }
+
+    private void sendRequiredResourcePack(Player player) {
+        String url = getConfig().getString("resource-pack.url", "").trim();
+        if (url.isEmpty()) {
+            return;
+        }
+        if (!url.startsWith("http://") && !url.startsWith("https://")) {
+            getLogger().warning("resource-pack.url must be a publicly accessible HTTP or HTTPS URL.");
+            return;
+        }
+
+        String sha1 = getConfig().getString("resource-pack.sha1", "").trim();
+        byte[] hash = null;
+        if (!sha1.isEmpty()) {
+            try {
+                hash = HexFormat.of().parseHex(sha1);
+            } catch (IllegalArgumentException exception) {
+                getLogger().warning("resource-pack.sha1 must be a 40-character hexadecimal SHA-1 hash.");
+                return;
+            }
+            if (hash.length != 20) {
+                getLogger().warning("resource-pack.sha1 must be a 40-character hexadecimal SHA-1 hash.");
+                return;
+            }
+        }
+
+        player.setResourcePack(url, hash, true);
     }
 
     private void logStartupBanner(java.util.List<String> updatedFiles) {

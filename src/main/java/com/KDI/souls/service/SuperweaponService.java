@@ -67,6 +67,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 public final class SuperweaponService implements Listener {
+    private static final int BOC_CUSTOM_MODEL_DATA = 19001;
+    private static final int SARCULUM_CUSTOM_MODEL_DATA = 19002;
     private static final DateTimeFormatter ARTIFACT_DATE_FORMAT = DateTimeFormatter
             .ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
     private final JavaPlugin plugin;
@@ -98,6 +100,7 @@ public final class SuperweaponService implements Listener {
         this.artifactIdKey = new NamespacedKey(plugin, "superweapon_id");
         this.artifactOwnershipFile = new File(plugin.getDataFolder(), "artifacts.yml");
         loadArtifactOwnerships();
+        Bukkit.getOnlinePlayers().forEach(this::normalizeArtifactModelData);
     }
 
     public void open(Player player) {
@@ -767,6 +770,7 @@ public final class SuperweaponService implements Listener {
                 MessageService.color("&6Hunger I &7— 5 minutes"),
                 MessageService.color("&8Non-craftable artifact")));
         meta.getPersistentDataContainer().set(artifactKey, PersistentDataType.STRING, "boc");
+        meta.setCustomModelData(BOC_CUSTOM_MODEL_DATA);
         item.setItemMeta(meta);
         return item;
     }
@@ -788,6 +792,7 @@ public final class SuperweaponService implements Listener {
                 MessageService.color("&7Airborne with a mace in your hotbar: 36 damage (18 hearts) per hit in a 12-block radius."),
                 MessageService.color("&8Non-craftable artifact")));
         meta.getPersistentDataContainer().set(artifactKey, PersistentDataType.STRING, "sarculum");
+        meta.setCustomModelData(SARCULUM_CUSTOM_MODEL_DATA);
         XEnchantment.matchXEnchantment("EFFICIENCY").ifPresent(enchant -> meta.addEnchant(enchant.getEnchant(), 5, true));
         XEnchantment.matchXEnchantment("UNBREAKING").ifPresent(enchant -> meta.addEnchant(enchant.getEnchant(), 3, true));
         XEnchantment.matchXEnchantment("MENDING").ifPresent(enchant -> meta.addEnchant(enchant.getEnchant(), 1, true));
@@ -1148,6 +1153,30 @@ public final class SuperweaponService implements Listener {
         if (remainingMillis > 0L) {
             long ticks = remainingMillis / 50L + (remainingMillis % 50L == 0L ? 0L : 1L);
             player.setCooldown(heldItem.getType(), (int) Math.min(Integer.MAX_VALUE, ticks));
+        }
+    }
+
+    private void normalizeArtifactModelData(Player player) {
+        normalizeArtifactModelData(player.getInventory());
+        normalizeArtifactModelData(player.getEnderChest());
+    }
+
+    private void normalizeArtifactModelData(Inventory inventory) {
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            ItemStack item = inventory.getItem(slot);
+            String artifact = artifact(item);
+            if (artifact == null) {
+                continue;
+            }
+
+            int modelData = artifact.equals("boc") ? BOC_CUSTOM_MODEL_DATA : SARCULUM_CUSTOM_MODEL_DATA;
+            ItemMeta meta = item.getItemMeta();
+            if (meta == null || (meta.hasCustomModelData() && meta.getCustomModelData() == modelData)) {
+                continue;
+            }
+            meta.setCustomModelData(modelData);
+            item.setItemMeta(meta);
+            inventory.setItem(slot, item);
         }
     }
 
@@ -1749,6 +1778,7 @@ public final class SuperweaponService implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+        normalizeArtifactModelData(player);
         if (refreshArtifactOwnership(player)) {
             saveArtifactOwnerships();
         }

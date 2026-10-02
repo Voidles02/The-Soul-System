@@ -8,6 +8,10 @@ database:
   password: change-me
   parameters: '?useUnicode=true&characterEncoding=utf8'
 
+resource-pack:
+  url: ''
+  sha1: ''
+
 souls:
   max-balance: 1000
 

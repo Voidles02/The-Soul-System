@@ -1,0 +1,14 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "minecraft:item/prismarine_shard"
+  },
+  "overrides": [
+    {
+      "predicate": {
+        "custom_model_data": 19000
+      },
+      "model": "souls:item/soul_shard"
+    }
+  ]
+}

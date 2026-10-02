@@ -13,6 +13,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.NamespacedKey;
 
 public final class FragmentService {
+    private static final int SOUL_FRAGMENT_CUSTOM_MODEL_DATA = 19000;
     private final JavaPlugin plugin;
     private final SoulService souls;
     private final SoulsConfig config;
@@ -35,6 +36,7 @@ public final class FragmentService {
         item.setAmount(Math.max(1, Math.min(64, amount)));
         ItemMeta meta = item.getItemMeta();
         meta.setDisplayName(MessageService.color(config.fragmentName()));
+        meta.setCustomModelData(SOUL_FRAGMENT_CUSTOM_MODEL_DATA);
         meta.getPersistentDataContainer().set(key, PersistentDataType.BYTE, (byte) 1);
         item.setItemMeta(meta);
         return item;
