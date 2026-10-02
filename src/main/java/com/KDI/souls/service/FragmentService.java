@@ -24,6 +24,9 @@ public final class FragmentService {
         this.souls = souls;
         this.config = config;
         this.key = new NamespacedKey(plugin, "soul_fragment");
+        if (!"PRISMARINE_SHARD".equalsIgnoreCase(config.fragmentMaterial())) {
+            plugin.getLogger().warning("fragments.item-material must be PRISMARINE_SHARD for the Soul Fragment resource-pack texture.");
+        }
     }
 
     public ItemStack createItem(int amount) {
@@ -36,7 +39,9 @@ public final class FragmentService {
         item.setAmount(Math.max(1, Math.min(64, amount)));
         ItemMeta meta = item.getItemMeta();
         meta.setDisplayName(MessageService.color(config.fragmentName()));
-        meta.setCustomModelData(SOUL_FRAGMENT_CUSTOM_MODEL_DATA);
+        if (item.getType().name().equals("PRISMARINE_SHARD")) {
+            meta.setCustomModelData(SOUL_FRAGMENT_CUSTOM_MODEL_DATA);
+        }
         meta.getPersistentDataContainer().set(key, PersistentDataType.BYTE, (byte) 1);
         item.setItemMeta(meta);
         return item;

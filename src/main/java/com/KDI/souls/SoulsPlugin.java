@@ -13,6 +13,7 @@ import com.KDI.souls.message.MessageService;
 import com.KDI.souls.placeholder.SoulsPlaceholderExpansion;
 import com.KDI.souls.recipe.SoulRecipeService;
 import com.KDI.souls.service.FragmentService;
+import com.KDI.souls.service.ResourcePackHost;
 import com.KDI.souls.service.SoulService;
 import com.KDI.souls.service.SuperweaponService;
 import com.KDI.souls.structure.SoulStructureService;
@@ -22,13 +23,22 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.server.ServerLoadEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerResourcePackStatusEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.entity.Player;
 
-import java.util.HexFormat;
+import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
 
 public final class SoulsPlugin extends JavaPlugin {
+    private static final int MAX_RESOURCE_PACK_RETRIES = 2;
+    private final Map<UUID, Integer> resourcePackRetries = new HashMap<>();
+    private final Map<UUID, UUID> resourcePackRequests = new HashMap<>();
     private SoulsConfig soulsConfig;
+    private ResourcePackHost resourcePackHost;
     private MessageService messageService;
     private DatabaseManager databaseManager;
     private SoulService soulService;
@@ -41,6 +51,13 @@ public final class SoulsPlugin extends JavaPlugin {
         saveResource("messages.yml", false);
 
         soulsConfig = new SoulsConfig(this);
+        resourcePackHost = new ResourcePackHost(this);
+        try {
+            resourcePackHost.start();
+        } catch (IOException | IllegalArgumentException exception) {
+            getLogger().severe("Could not start the embedded resource pack host: " + exception.getMessage());
+            resourcePackHost.stop();
+        }
         messageService = new MessageService(this);
         databaseManager = new DatabaseManager(this, soulsConfig);
         try {
@@ -86,7 +103,69 @@ public final class SoulsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(new Listener() {
             @EventHandler
             public void onPlayerJoin(PlayerJoinEvent event) {
-                sendRequiredResourcePack(event.getPlayer());
+                Player player = event.getPlayer();
+                resourcePackRetries.remove(player.getUniqueId());
+                resourcePackRequests.remove(player.getUniqueId());
+                getServer().getScheduler().runTaskLater(SoulsPlugin.this, () -> {
+                    if (player.isOnline()) {
+                        sendRequiredResourcePack(player);
+                    }
+                }, 1L);
+            }
+
+            @EventHandler
+            public void onResourcePackStatus(PlayerResourcePackStatusEvent event) {
+                Player player = event.getPlayer();
+                UUID playerId = player.getUniqueId();
+                if (!event.getID().equals(resourcePackRequests.get(playerId))) {
+                    return;
+                }
+                String status = event.getStatus().name();
+
+                if ("SUCCESSFULLY_LOADED".equals(status)) {
+                    resourcePackRetries.remove(playerId);
+                    resourcePackRequests.remove(playerId);
+                    getLogger().info("Resource pack loaded by " + player.getName() + ".");
+                    return;
+                }
+                if ("DECLINED".equals(status)) {
+                    resourcePackRequests.remove(playerId);
+                    getLogger().warning(player.getName() + " declined the required resource pack.");
+                    return;
+                }
+                if ("INVALID_URL".equals(status)) {
+                    resourcePackRequests.remove(playerId);
+                    getLogger().severe("The embedded resource pack URL was rejected by the client.");
+                    return;
+                }
+                if (!"FAILED_DOWNLOAD".equals(status) && !"FAILED_RELOAD".equals(status)) {
+                    return;
+                }
+
+                int retries = resourcePackRetries.getOrDefault(playerId, 0);
+                if (retries >= MAX_RESOURCE_PACK_RETRIES) {
+                    resourcePackRequests.remove(playerId);
+                    getLogger().warning("Resource pack failed for " + player.getName()
+                            + " after " + retries + " retries.");
+                    return;
+                }
+
+                int nextRetry = retries + 1;
+                resourcePackRetries.put(playerId, nextRetry);
+                getLogger().warning("Resource pack failed for " + player.getName() + " ("
+                        + status + "); retrying in 2 seconds (" + nextRetry + "/"
+                        + MAX_RESOURCE_PACK_RETRIES + ").");
+                getServer().getScheduler().runTaskLater(SoulsPlugin.this, () -> {
+                    if (player.isOnline() && resourcePackRetries.getOrDefault(playerId, 0) == nextRetry) {
+                        sendRequiredResourcePack(player);
+                    }
+                }, 40L);
+            }
+
+            @EventHandler
+            public void onPlayerQuit(PlayerQuitEvent event) {
+                resourcePackRetries.remove(event.getPlayer().getUniqueId());
+                resourcePackRequests.remove(event.getPlayer().getUniqueId());
             }
 
             @EventHandler
@@ -103,38 +182,20 @@ public final class SoulsPlugin extends JavaPlugin {
     }
 
     private void sendRequiredResourcePack(Player player) {
-        String url = getConfig().getString("resource-pack.url", "").trim();
-        if (url.isEmpty()) {
+        if (resourcePackHost == null || resourcePackHost.getPublicUrl() == null) {
             return;
         }
-        if (!url.startsWith("http://") && !url.startsWith("https://")) {
-            getLogger().warning("resource-pack.url must be a publicly accessible HTTP or HTTPS URL.");
-            return;
-        }
-
-        String sha1 = getConfig().getString("resource-pack.sha1", "").trim();
-        byte[] hash = null;
-        if (!sha1.isEmpty()) {
-            try {
-                hash = HexFormat.of().parseHex(sha1);
-            } catch (IllegalArgumentException exception) {
-                getLogger().warning("resource-pack.sha1 must be a 40-character hexadecimal SHA-1 hash.");
-                return;
-            }
-            if (hash.length != 20) {
-                getLogger().warning("resource-pack.sha1 must be a 40-character hexadecimal SHA-1 hash.");
-                return;
-            }
-        }
-
-        player.setResourcePack(url, hash, true);
+        UUID packId = UUID.randomUUID();
+        resourcePackRequests.put(player.getUniqueId(), packId);
+        player.addResourcePack(packId, resourcePackHost.getPublicUrl(), resourcePackHost.getSha1Bytes(),
+                "Souls custom item textures", true);
     }
 
     private void logStartupBanner(java.util.List<String> updatedFiles) {
         Runtime runtime = Runtime.getRuntime();
         long usedMemory = (runtime.totalMemory() - runtime.freeMemory()) / 1_048_576;
         long maxMemory = runtime.maxMemory() / 1_048_576;
-        String resourcePackUrl = getConfig().getString("resource-pack.url", "").trim();
+        boolean resourcePackAvailable = resourcePackHost != null && resourcePackHost.getPublicUrl() != null;
         boolean placeholderApiEnabled = Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI");
 
         getLogger().info("§a╔" + "═".repeat(76) + "╗");
@@ -160,7 +221,7 @@ public final class SoulsPlugin extends JavaPlugin {
         logBannerLine("Worlds       " + Bukkit.getWorlds().size());
         logBannerLine("Plugins      " + Bukkit.getPluginManager().getPlugins().length + " loaded");
         logBannerLine("PlaceholderAPI " + (placeholderApiEnabled ? "enabled" : "not detected"));
-        logBannerLine("Resource pack " + (resourcePackUrl.isEmpty() ? "not configured" : "configured"));
+        logBannerLine("Resource pack " + (resourcePackAvailable ? "self-hosted" : "host/pack unavailable"));
         logBannerLine("");
         logBannerLine("SOULS SYSTEMS");
         logBannerLine("Progression  Souls, fragments, boosts");
@@ -192,6 +253,10 @@ public final class SoulsPlugin extends JavaPlugin {
         } catch (Exception exception) {
             getLogger().severe("Could not persist soul balances during shutdown: " + exception.getMessage());
         } finally {
+            if (resourcePackHost != null) {
+                resourcePackHost.stop();
+                resourcePackHost = null;
+            }
             if (databaseManager != null) {
                 databaseManager.close();
             }
@@ -203,6 +268,28 @@ public final class SoulsPlugin extends JavaPlugin {
         soulsConfig.reload();
         messageService.reload();
         recipeService.registerRecipes();
+    }
+
+    public ResourcePackHost.AuditResult repairResourcePack() {
+        if (resourcePackHost == null) {
+            resourcePackHost = new ResourcePackHost(this);
+        }
+        return resourcePackHost.repairAndAudit();
+    }
+
+    public int reapplyResourcePackToOnlinePlayers() {
+        if (resourcePackHost == null || resourcePackHost.getPublicUrl() == null) {
+            return 0;
+        }
+        int sent = 0;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            UUID playerId = player.getUniqueId();
+            resourcePackRetries.remove(playerId);
+            resourcePackRequests.remove(playerId);
+            sendRequiredResourcePack(player);
+            sent++;
+        }
+        return sent;
     }
 
     public SoulsConfig getSoulsConfig() {

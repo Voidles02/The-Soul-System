@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'com.KDI'
-version = '1.9.9'
+version = '2.0.4'
 
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(17)
@@ -24,7 +24,32 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 processResources {
+    dependsOn tasks.named('resourcePackZip')
+    from(tasks.named('resourcePackZip').flatMap { it.archiveFile }) {
+        into('')
+    }
     filesMatching('plugin.yml') {
         expand(version: project.version)
     }
+}
+
+tasks.register('resourcePackZip', Zip) {
+    archiveFileName = 'souls-resource-pack.zip'
+    destinationDirectory = layout.buildDirectory.dir('distributions')
+    from('resource-pack')
+}
+
+tasks.register('resourcePackSha1') {
+    dependsOn tasks.named('resourcePackZip')
+    def archive = tasks.named('resourcePackZip').flatMap { it.archiveFile }
+    doLast {
+        File pack = archive.get().asFile
+        byte[] digest = java.security.MessageDigest.getInstance('SHA-1').digest(pack.bytes)
+        String sha1 = digest.collect { String.format('%02x', it & 0xff) }.join()
+        new File(pack.parentFile, pack.name + '.sha1').text = sha1 + System.lineSeparator()
+    }
+}
+
+tasks.named('assemble') {
+    dependsOn tasks.named('resourcePackSha1')
 }

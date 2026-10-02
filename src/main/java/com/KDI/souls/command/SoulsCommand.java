@@ -74,6 +74,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             case "remove" -> remove(sender, args);
             case "inspect" -> inspect(sender, args);
             case "reload" -> reload(sender);
+            case "textures" -> textures(sender);
             case "sw" -> openSuperweapons(sender);
             case "sw-info" -> openSuperweaponInfo(sender);
             case "sw-cooldown" -> superweaponCooldown(sender, args);
@@ -466,6 +467,21 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         messages.send(sender, "reload");
     }
 
+    private void textures(CommandSender sender) {
+        if (!requireAdmin(sender)) {
+            return;
+        }
+        sender.sendMessage("§b[Souls Textures] §7Scanning the bundled pack, repairing server files, and checking the live host...");
+        com.KDI.souls.service.ResourcePackHost.AuditResult result = plugin.repairResourcePack();
+        result.messages().forEach(sender::sendMessage);
+        if (!result.valid() || !result.hostReady()) {
+            return;
+        }
+        int playersSent = plugin.reapplyResourcePackToOnlinePlayers();
+        sender.sendMessage("§a[Souls Textures] Re-applied the required resource pack to " + playersSent + " online player(s).");
+        sender.sendMessage("§7Client download/reload status is logged by Souls; visual rendering itself cannot be read from the server.");
+    }
+
     private boolean requireAdmin(CommandSender sender) {
         if (!sender.hasPermission("souls.admin")) {
             messages.send(sender, "no-permission");
@@ -503,8 +519,8 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "convert", "give", "take", "set", "remove", "inspect", "reload", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
-                    .filter(value -> !(value.equals("sw") || value.equals("sw-cooldown") || value.equals("artifact") || value.equals("artifacts"))
+            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "convert", "give", "take", "set", "remove", "inspect", "reload", "textures", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
+                    .filter(value -> !(value.equals("textures") || value.equals("sw") || value.equals("sw-cooldown") || value.equals("artifact") || value.equals("artifacts"))
                             || sender.hasPermission("souls.admin"))
                     .filter(value -> value.startsWith(args[0].toLowerCase())).toList();
         }
