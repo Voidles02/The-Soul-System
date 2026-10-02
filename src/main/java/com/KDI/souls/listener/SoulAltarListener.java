@@ -418,12 +418,15 @@ public final class SoulAltarListener implements Listener {
             return;
         }
         boolean hadCustomAttributes = hasSoulModifier(meta);
-        com.cryptomorin.xseries.XAttribute.of("attack_speed").ifPresent(attribute -> removeSoulModifier(meta,
-                attribute.get(), "souls:speed", legacySpeedModifierUuid));
-        com.cryptomorin.xseries.XAttribute.of("attack_damage").ifPresent(attribute -> removeSoulModifier(meta,
-                attribute.get(), "souls:damage", damageModifierUuid));
-        com.cryptomorin.xseries.XAttribute.of("attack_damage").ifPresent(attribute -> removeSoulModifier(meta,
-                attribute.get(), "souls:vanilla_damage", vanillaDamageModifierUuid));
+        org.bukkit.attribute.Attribute attackSpeed = findAttribute("attack_speed");
+        if (attackSpeed != null) {
+            removeSoulModifier(meta, attackSpeed, "souls:speed", legacySpeedModifierUuid);
+        }
+        org.bukkit.attribute.Attribute attackDamage = findAttribute("attack_damage");
+        if (attackDamage != null) {
+            removeSoulModifier(meta, attackDamage, "souls:damage", damageModifierUuid);
+            removeSoulModifier(meta, attackDamage, "souls:vanilla_damage", vanillaDamageModifierUuid);
+        }
 
         var container = meta.getPersistentDataContainer();
         String material = com.cryptomorin.xseries.XMaterial.matchXMaterial(item.getType()).name();
@@ -445,22 +448,30 @@ public final class SoulAltarListener implements Listener {
         if ((hadCustomAttributes || critValue(container) > 0 || damage > 0) && baseDamage > 0 && isCombatWeapon(item)) {
             double soulAmount = Double.isFinite(damage) && damage > 0
                     ? Math.min(baseDamage * (damage * 0.40), Math.max(0, damageTotalCap(material) - baseDamage)) : 0;
-            com.cryptomorin.xseries.XAttribute.of("attack_damage").ifPresent(attribute -> {
+            if (attackDamage != null) {
                 double totalModifier = Math.max(0, baseDamage - 1.0 + soulAmount);
-                meta.addAttributeModifier(attribute.get(), new AttributeModifier(damageModifierUuid, "souls:damage",
+                meta.addAttributeModifier(attackDamage, new AttributeModifier(damageModifierUuid, "souls:damage",
                         totalModifier, AttributeModifier.Operation.ADD_NUMBER, EquipmentSlot.HAND));
-            });
+            }
         }
         item.setItemMeta(meta);
     }
 
     private boolean hasSoulModifier(ItemMeta meta) {
-        return com.cryptomorin.xseries.XAttribute.of("attack_speed")
-                .map(attribute -> hasSoulModifier(meta, attribute.get()))
-                .orElse(false)
-                || com.cryptomorin.xseries.XAttribute.of("attack_damage")
-                .map(attribute -> hasSoulModifier(meta, attribute.get()))
-                .orElse(false);
+        org.bukkit.attribute.Attribute attackSpeed = findAttribute("attack_speed");
+        org.bukkit.attribute.Attribute attackDamage = findAttribute("attack_damage");
+        return attackSpeed != null && hasSoulModifier(meta, attackSpeed)
+                || attackDamage != null && hasSoulModifier(meta, attackDamage);
+    }
+
+    private org.bukkit.attribute.Attribute findAttribute(String name) {
+        String normalizedName = name.toUpperCase(java.util.Locale.ROOT);
+        for (org.bukkit.attribute.Attribute attribute : org.bukkit.attribute.Attribute.values()) {
+            if (attribute.name().equals(normalizedName) || attribute.name().endsWith("_" + normalizedName)) {
+                return attribute;
+            }
+        }
+        return null;
     }
 
     private boolean hasSoulModifier(ItemMeta meta, org.bukkit.attribute.Attribute attribute) {
