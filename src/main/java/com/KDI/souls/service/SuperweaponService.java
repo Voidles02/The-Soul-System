@@ -718,7 +718,8 @@ public final class SuperweaponService implements Listener {
                 MessageService.color("&7Sneak + left-click: faster, freely steerable dash up to 25 blocks; 2-minute cooldown."),
                 MessageService.color("&7Dash: 16.5 damage (8.25 hearts) in a 4-block radius along the path."),
                 MessageService.color("&7Sneak (Shift) + right-click: slam; 5-minute cooldown."),
-                MessageService.color("&7Slam: launch up to 8 blocks, then strike twice."),
+                MessageService.color("&7Slam: launch up to 8 blocks for one impact."),
+                MessageService.color("&7Airborne with a mace in your hotbar: launch up to 12 blocks for two impacts."),
                 MessageService.color("&7Each slam hit: 24 damage (12 hearts), with no distance falloff."),
                 MessageService.color("&7Airborne with a mace in your hotbar: 36 damage (18 hearts) per hit in a 4x radius."),
                 MessageService.color("&8Non-craftable artifact")));
@@ -1348,7 +1349,7 @@ public final class SuperweaponService implements Listener {
         fallProtection.put(uuid, fallProtectionExpiry);
         Bukkit.getScheduler().runTaskLater(plugin, () -> fallProtection.remove(uuid, fallProtectionExpiry), 600L);
         player.setFallDistance(0);
-        player.setVelocity(aerialSlam ? new Vector(0, -1.2, 0) : new Vector(0, 1.35, 0));
+        player.setVelocity(new Vector(0, aerialSlam ? 1.65 : 1.35, 0));
         if (!aerialSlam) {
             XSound.matchXSound("ENTITY_FIREWORK_ROCKET_LAUNCH").ifPresent(sound -> sound.play(player));
         }
@@ -1358,7 +1359,7 @@ public final class SuperweaponService implements Listener {
             private int impacts;
             private double ascentStartY = start.getY();
             private boolean airborne = aerialSlam;
-            private boolean dropping = aerialSlam;
+            private boolean dropping;
 
             @Override
             public void run() {
@@ -1443,7 +1444,7 @@ public final class SuperweaponService implements Listener {
                     fallProtection.remove(uuid);
                     return;
                 }
-                double ascentHeight = impacts == 0 ? 8 : 2;
+                double ascentHeight = impacts == 0 ? (aerialSlam ? 12 : 8) : 2;
                 double ascentTargetY = ascentStartY + ascentHeight;
                 if (!dropping && (current.getY() >= ascentTargetY || phaseTicks >= 60
                         || (airborne && player.getVelocity().getY() <= 0))) {
