@@ -131,23 +131,56 @@ public final class SoulsPlugin extends JavaPlugin {
     }
 
     private void logStartupBanner(java.util.List<String> updatedFiles) {
-        getLogger().info("§a╔════════════════════════════════════╗");
-        logBannerLine("Souls Enabled");
-        logBannerLine("Name: Souls");
-        logBannerLine("Version: " + getDescription().getVersion());
-        logBannerLine("Prefix: Major");
-        logBannerLine("Files updated:");
+        Runtime runtime = Runtime.getRuntime();
+        long usedMemory = (runtime.totalMemory() - runtime.freeMemory()) / 1_048_576;
+        long maxMemory = runtime.maxMemory() / 1_048_576;
+        String resourcePackUrl = getConfig().getString("resource-pack.url", "").trim();
+        boolean placeholderApiEnabled = Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI");
+
+        getLogger().info("§a╔" + "═".repeat(76) + "╗");
+        logBannerLine("SOULS  //  STARTUP REPORT");
+        logBannerLine("STATUS       ONLINE  |  Prefix: Enhanced");
+        logBannerLine("");
+        logBannerLine("PLUGIN");
+        logBannerLine("Name         " + getDescription().getName());
+        logBannerLine("Version      " + getDescription().getVersion());
+        logBannerLine("Authors      " + String.join(", ", getDescription().getAuthors()));
+        String website = getDescription().getWebsite();
+        logBannerLine("Website      " + (website == null ? "not set" : website));
+        logBannerLine("");
+        logBannerLine("SERVER ENVIRONMENT");
+        logBannerLine("Server       " + Bukkit.getName() + " " + Bukkit.getVersion());
+        logBannerLine("Bukkit API   " + Bukkit.getBukkitVersion());
+        logBannerLine("Java         " + System.getProperty("java.version"));
+        logBannerLine("Platform     " + System.getProperty("os.name") + " " + System.getProperty("os.arch"));
+        logBannerLine("Memory       " + usedMemory + " MB used / " + maxMemory + " MB max");
+        logBannerLine("");
+        logBannerLine("SERVER STATUS");
+        logBannerLine("Players      " + Bukkit.getOnlinePlayers().size() + " online / " + Bukkit.getMaxPlayers() + " max");
+        logBannerLine("Worlds       " + Bukkit.getWorlds().size());
+        logBannerLine("Plugins      " + Bukkit.getPluginManager().getPlugins().length + " loaded");
+        logBannerLine("PlaceholderAPI " + (placeholderApiEnabled ? "enabled" : "not detected"));
+        logBannerLine("Resource pack " + (resourcePackUrl.isEmpty() ? "not configured" : "configured"));
+        logBannerLine("");
+        logBannerLine("SOULS SYSTEMS");
+        logBannerLine("Progression  Souls, fragments, boosts");
+        logBannerLine("Content      Altars, shrines, recipes");
+        logBannerLine("Weapons      Sarculum and Book of Bōc");
+        logBannerLine("Interfaces   Guide, stats, commands");
+        logBannerLine("Storage      Database initialized");
+        logBannerLine("");
+        logBannerLine("STARTUP CHECK  |  " + updatedFiles.size() + " file(s) updated");
         if (updatedFiles.isEmpty()) {
-            logBannerLine("  None");
+            logBannerLine("No system files needed updating");
         } else {
-            updatedFiles.forEach(file -> logBannerLine("  " + file));
+            updatedFiles.forEach(file -> logBannerLine("- " + file));
         }
-        getLogger().info("§a╚════════════════════════════════════╝");
+        getLogger().info("§a╚" + "═".repeat(76) + "╝");
     }
 
     private void logBannerLine(String text) {
-        String value = text.length() > 34 ? text.substring(0, 31) + "..." : text;
-        getLogger().info("§a║ " + String.format("%-34s", value) + " ║");
+        String value = text.length() > 76 ? text.substring(0, 73) + "..." : text;
+        getLogger().info("§a║ " + String.format("%-76s", value) + " ║");
     }
 
     @Override

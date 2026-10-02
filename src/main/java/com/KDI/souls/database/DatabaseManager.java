@@ -35,7 +35,11 @@ public final class DatabaseManager {
 
     public void initialize() throws SQLException {
         if (config.databaseType().equals("sqlite")) {
-            plugin.getDataFolder().mkdirs();
+            File databaseFile = new File(plugin.getDataFolder(), config.sqliteFile());
+            File parent = databaseFile.getParentFile();
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs() && !parent.isDirectory()) {
+                throw new SQLException("Could not create SQLite database directory: " + parent);
+            }
         }
         try (Connection connection = connection(); Statement statement = connection.createStatement()) {
             statement.executeUpdate("CREATE TABLE IF NOT EXISTS souls_balances (uuid VARCHAR(36) PRIMARY KEY, souls BIGINT NOT NULL)");
