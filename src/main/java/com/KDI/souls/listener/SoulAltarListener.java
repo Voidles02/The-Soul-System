@@ -709,6 +709,7 @@ public final class SoulAltarListener implements Listener {
 
     @EventHandler
     public void onPrepareAnvil(PrepareAnvilEvent event) {
+        applyAnvilTextureModel(event);
         ItemStack first = event.getInventory().getItem(0);
         ItemStack second = event.getInventory().getItem(1);
         if (first == null || second == null || !first.hasItemMeta() || !second.hasItemMeta()) {
@@ -787,6 +788,35 @@ public final class SoulAltarListener implements Listener {
         }
         result.setItemMeta(meta);
         refreshSoulAttributes(result);
+        event.setResult(result);
+        applyAnvilTextureModel(event);
+    }
+
+    private void applyAnvilTextureModel(PrepareAnvilEvent event) {
+        ItemStack result = event.getResult();
+        if (result == null || !result.hasItemMeta()) {
+            return;
+        }
+
+        ItemMeta meta = result.getItemMeta();
+        String itemType = com.cryptomorin.xseries.XMaterial.matchXMaterial(result.getType()).name();
+        String itemName = meta.hasDisplayName() ? meta.getDisplayName() : "";
+        Integer modelData = switch (itemType) {
+            case "PRISMARINE_SHARD" -> "Soul Shard".equals(itemName) ? 19000 : null;
+            case "SILENCE_ARMOR_TRIM_SMITHING_TEMPLATE" -> "The Book of Bōc".equals(itemName) ? 19001 : null;
+            case "NETHERITE_HOE" -> "The Sarculum".equals(itemName) ? 19002 : null;
+            default -> null;
+        };
+
+        if (modelData != null) {
+            meta.setCustomModelData(modelData);
+        } else if (meta.hasCustomModelData() && Set.of(19000, 19001, 19002).contains(meta.getCustomModelData())) {
+            meta.setCustomModelData(null);
+        } else {
+            return;
+        }
+
+        result.setItemMeta(meta);
         event.setResult(result);
     }
 

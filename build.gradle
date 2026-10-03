@@ -3,7 +3,7 @@ plugins {
 }
 
 group = 'com.KDI'
-version = '2.0.4'
+version = '3.0.3'
 
 java {
     toolchain.languageVersion = JavaLanguageVersion.of(17)
@@ -33,10 +33,68 @@ processResources {
     }
 }
 
+def generatedResourcePackTextures = layout.buildDirectory.dir('generated/resource-pack-textures')
+
+tasks.register('generateResourcePackTextures') {
+    outputs.dir(generatedResourcePackTextures)
+    doLast {
+        generatedResourcePackTextures.get().asFile.deleteDir()
+        File textureDirectory = generatedResourcePackTextures.get().dir('assets/souls/textures/item').asFile
+        textureDirectory.mkdirs()
+        def polygon = { graphics, points ->
+            int[] xPoints = points.collect { it[0] as int } as int[]
+            int[] yPoints = points.collect { it[1] as int } as int[]
+            graphics.fillPolygon(new java.awt.Polygon(xPoints, yPoints, points.size()))
+        }
+        def writeTexture = { String name, painter ->
+            def image = new java.awt.image.BufferedImage(32, 32, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+            def graphics = image.createGraphics()
+            graphics.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING,
+                    java.awt.RenderingHints.VALUE_ANTIALIAS_OFF)
+            painter.call(graphics)
+            graphics.dispose()
+            javax.imageio.ImageIO.write(image, 'png', new File(textureDirectory, name))
+        }
+
+        writeTexture('soul_shard.png') { graphics ->
+            graphics.rotate(-Math.PI / 2, 16, 16)
+            graphics.setColor(new java.awt.Color(24, 13, 64))
+            polygon(graphics, [[16, 1], [29, 12], [19, 31], [3, 19]])
+            graphics.setColor(new java.awt.Color(102, 40, 231))
+            polygon(graphics, [[16, 4], [26, 13], [18, 27], [6, 18]])
+            graphics.setColor(new java.awt.Color(37, 215, 255))
+            polygon(graphics, [[16, 5], [17, 17], [7, 18]])
+            graphics.setColor(new java.awt.Color(178, 247, 255))
+            polygon(graphics, [[16, 5], [24, 13], [17, 17]])
+            graphics.setColor(new java.awt.Color(59, 30, 144))
+            polygon(graphics, [[17, 17], [26, 13], [18, 27]])
+        }
+        writeTexture('book_of_boc.png') { graphics ->
+            graphics.setColor(new java.awt.Color(25, 15, 55))
+            polygon(graphics, [[4, 5], [25, 3], [29, 7], [27, 27], [7, 29], [3, 25]])
+            graphics.setColor(new java.awt.Color(225, 210, 165))
+            polygon(graphics, [[7, 8], [25, 7], [23, 24], [7, 25]])
+            graphics.setColor(new java.awt.Color(93, 37, 153))
+            polygon(graphics, [[4, 5], [24, 3], [25, 7], [7, 9], [7, 29], [3, 25]])
+            graphics.setColor(new java.awt.Color(244, 189, 72))
+            graphics.fillRect(9, 12, 2, 10)
+            graphics.fillRect(14, 12, 8, 2)
+            graphics.fillRect(14, 16, 6, 2)
+            graphics.fillRect(14, 20, 7, 2)
+        }
+    }
+}
+
 tasks.register('resourcePackZip', Zip) {
+    dependsOn tasks.named('generateResourcePackTextures')
+    duplicatesStrategy = DuplicatesStrategy.FAIL
     archiveFileName = 'souls-resource-pack.zip'
     destinationDirectory = layout.buildDirectory.dir('distributions')
-    from('resource-pack')
+    from('resource-pack') {
+        exclude 'assets/souls/textures/item/soul_shard.png'
+        exclude 'assets/souls/textures/item/book_of_boc.png'
+    }
+    from(generatedResourcePackTextures)
 }
 
 tasks.register('resourcePackSha1') {

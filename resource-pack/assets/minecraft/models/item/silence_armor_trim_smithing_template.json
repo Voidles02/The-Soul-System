@@ -2,13 +2,5 @@
   "parent": "minecraft:item/generated",
   "textures": {
     "layer0": "minecraft:item/silence_armor_trim_smithing_template"
-  },
-  "overrides": [
-    {
-      "predicate": {
-        "custom_model_data": 19001
-      },
-      "model": "souls:item/book_of_boc"
-    }
-  ]
+  }
 }

@@ -114,7 +114,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
                 return;
             }
             String ability = args[2].toLowerCase(Locale.ROOT);
-            if (!List.of("dash", "slam", "activate", "beam").contains(ability)) {
+            if (!List.of("dash", "slam", "mace-slam", "activate", "beam").contains(ability)) {
                 messages.send(sender, "sw-cooldown-usage");
                 return;
             }
@@ -134,7 +134,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         String ability = args.length == 3 ? args[2].toLowerCase() : "all";
-        if (!List.of("dash", "slam", "activate", "beam", "all").contains(ability)) {
+        if (!List.of("dash", "slam", "mace-slam", "activate", "beam", "all").contains(ability)) {
             messages.send(sender, "sw-cooldown-usage");
             return;
         }
@@ -145,7 +145,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         }
         superweapons.clearCooldown(target, ability);
         messages.send(sender, "sw-cooldown-cleared", Map.of(
-                "ability", ability.equals("all") ? "Dash, Slam, Activate, and Beam" : ability,
+                "ability", ability.equals("all") ? "Dash, Slam, Mace Slam, Activate, and Beam" : ability,
                 "player", target.getName()));
     }
 
@@ -568,10 +568,10 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         if (args.length == 3 && args[0].equalsIgnoreCase("sw-cooldown")
                 && sender.hasPermission("souls.admin")) {
             if (args[1].equalsIgnoreCase("set")) {
-                return List.of("dash", "slam", "activate", "beam").stream()
+                return List.of("dash", "slam", "mace-slam", "activate", "beam").stream()
                         .filter(value -> value.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
             }
-            return List.of("dash", "slam", "activate", "beam", "all").stream()
+            return List.of("dash", "slam", "mace-slam", "activate", "beam", "all").stream()
                     .filter(value -> value.startsWith(args[2].toLowerCase())).toList();
         }
         if (args.length == 4 && args[0].equalsIgnoreCase("sw-cooldown")

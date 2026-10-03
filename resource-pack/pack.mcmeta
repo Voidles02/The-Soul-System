@@ -1,6 +1,8 @@
 {
   "pack": {
-    "pack_format": 22,
-    "description": "Souls item textures (Minecraft 1.20.4)"
+    "pack_format": 75,
+    "description": "Souls item textures for Minecraft 1.21.11 (vanilla and CIT Resewn Continuation)",
+    "min_format": 75,
+    "max_format": 75
   }
 }

@@ -69,11 +69,12 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 public final class SuperweaponService implements Listener {
-    private static final int BOC_CUSTOM_MODEL_DATA = 19001;
-    private static final int SARCULUM_CUSTOM_MODEL_DATA = 19002;
     private static final int COOLDOWN_BAR_CELLS = 2;
     private static final int COOLDOWN_BAR_LEVELS = 8;
     private static final String[] COOLDOWN_PARTIAL_BLOCKS = {"", "▏", "▎", "▍", "▌", "▋", "▊", "▉"};
+    private static final double SARCuLUM_DASH_DAMAGE = 13.5;
+    private static final double SARCULUM_GROUND_SLAM_DAMAGE = 18.0;
+    private static final double SARCULUM_MACE_SLAM_DAMAGE = 30.0;
     private static final DateTimeFormatter ARTIFACT_DATE_FORMAT = DateTimeFormatter
             .ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
     private final JavaPlugin plugin;
@@ -82,6 +83,7 @@ public final class SuperweaponService implements Listener {
     private final NamespacedKey artifactKey;
     private final NamespacedKey dashCooldownKey;
     private final NamespacedKey slamCooldownKey;
+    private final NamespacedKey maceSlamCooldownKey;
     private final NamespacedKey activateCooldownKey;
     private final NamespacedKey beamCooldownKey;
     private final NamespacedKey artifactIdKey;
@@ -100,12 +102,12 @@ public final class SuperweaponService implements Listener {
         this.artifactKey = new NamespacedKey(plugin, "superweapon");
         this.dashCooldownKey = new NamespacedKey(plugin, "sarculum_dash_cooldown");
         this.slamCooldownKey = new NamespacedKey(plugin, "sarculum_slam_cooldown");
+        this.maceSlamCooldownKey = new NamespacedKey(plugin, "sarculum_mace_slam_cooldown");
         this.activateCooldownKey = new NamespacedKey(plugin, "superweapon_activate_cooldown");
         this.beamCooldownKey = new NamespacedKey(plugin, "boc_beam_cooldown");
         this.artifactIdKey = new NamespacedKey(plugin, "superweapon_id");
         this.artifactOwnershipFile = new File(plugin.getDataFolder(), "artifacts.yml");
         loadArtifactOwnerships();
-        Bukkit.getOnlinePlayers().forEach(this::normalizeArtifactModelData);
     }
 
     public void open(Player player) {
@@ -136,17 +138,18 @@ public final class SuperweaponService implements Listener {
             messages.send(player, "sw-info-unavailable");
             return;
         }
-        Map<String, String> replacements = Map.of(
-                "{dash-cooldown}", formatCooldown("dash", 2 * 60 * 1000L),
-                "{slam-cooldown}", formatCooldown("slam", 5 * 60 * 1000L),
-                "{activate-cooldown}", formatCooldown("activate", 15 * 60 * 1000L),
-                "{beam-cooldown}", formatCooldown("beam", 10 * 60 * 1000L),
-                "{shop-status}", featureStatus("shop"),
-                "{altar-status}", featureStatus("altar"),
-                "{powers-status}", featureStatus("powers"),
-                "{bounties-status}", featureStatus("bounties"),
-                "{shrines-status}", featureStatus("shrines"),
-                "{events-status}", featureStatus("random-events"));
+        Map<String, String> replacements = Map.ofEntries(
+                Map.entry("{dash-cooldown}", formatCooldown("dash", 2 * 60 * 1000L)),
+                Map.entry("{slam-cooldown}", formatCooldown("slam", 5 * 60 * 1000L)),
+                Map.entry("{mace-slam-cooldown}", formatCooldown("mace-slam", 15 * 60 * 1000L)),
+                Map.entry("{activate-cooldown}", formatCooldown("activate", 15 * 60 * 1000L)),
+                Map.entry("{beam-cooldown}", formatCooldown("beam", 10 * 60 * 1000L)),
+                Map.entry("{shop-status}", featureStatus("shop")),
+                Map.entry("{altar-status}", featureStatus("altar")),
+                Map.entry("{powers-status}", featureStatus("powers")),
+                Map.entry("{bounties-status}", featureStatus("bounties")),
+                Map.entry("{shrines-status}", featureStatus("shrines")),
+                Map.entry("{events-status}", featureStatus("random-events")));
         List<String> pages = new java.util.ArrayList<>(pageTemplates.size());
         for (String page : pageTemplates) {
             for (Map.Entry<String, String> replacement : replacements.entrySet()) {
@@ -321,12 +324,18 @@ public final class SuperweaponService implements Listener {
         if (ability.equals("slam") || ability.equals("all")) {
             player.getPersistentDataContainer().remove(slamCooldownKey);
         }
+        if (ability.equals("mace-slam") || ability.equals("all")) {
+            player.getPersistentDataContainer().remove(maceSlamCooldownKey);
+        }
         if (ability.equals("activate") || ability.equals("all")) {
             player.getPersistentDataContainer().remove(activateCooldownKey);
         }
         if (ability.equals("beam") || ability.equals("all")) {
             player.getPersistentDataContainer().remove(beamCooldownKey);
         }
+        long now = System.currentTimeMillis();
+        refreshArtifactCooldown(player, "boc", now);
+        refreshArtifactCooldown(player, "sarculum", now);
         startCooldownHud(player);
     }
 
@@ -336,6 +345,7 @@ public final class SuperweaponService implements Listener {
         NamespacedKey key = switch (ability) {
             case "dash" -> dashCooldownKey;
             case "slam" -> slamCooldownKey;
+            case "mace-slam" -> maceSlamCooldownKey;
             case "activate" -> activateCooldownKey;
             case "beam" -> beamCooldownKey;
             default -> throw new IllegalArgumentException("Unknown superweapon cooldown: " + ability);
@@ -748,12 +758,8 @@ public final class SuperweaponService implements Listener {
     }
 
     private long cooldownDurationMillis(String ability, long defaultMillis) {
-        long configuredMillis = plugin.getConfig().getLong(
-                "superweapon.cooldowns." + ability + "-millis", defaultMillis);
-        if (ability.equals("activate") && configuredMillis <= 0L) {
-            return defaultMillis;
-        }
-        return Math.max(0L, configuredMillis);
+        return Math.max(0L, plugin.getConfig().getLong(
+                "superweapon.cooldowns." + ability + "-millis", defaultMillis));
     }
 
     private ItemStack createBook() {
@@ -763,7 +769,8 @@ public final class SuperweaponService implements Listener {
             return null;
         }
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(MessageService.color("&d&lThe Book of Bōc"));
+        meta.setDisplayName("The Book of Bōc");
+        meta.setCustomModelData(19001);
         meta.setLore(List.of(
                 MessageService.color("&7Right-click to invoke the book."),
                 MessageService.color("&7Left-click for a 45-block beam and 3 shockwaves; 10-minute cooldown."),
@@ -775,7 +782,6 @@ public final class SuperweaponService implements Listener {
                 MessageService.color("&6Hunger I &7— 5 minutes"),
                 MessageService.color("&8Non-craftable artifact")));
         meta.getPersistentDataContainer().set(artifactKey, PersistentDataType.STRING, "boc");
-        meta.setCustomModelData(BOC_CUSTOM_MODEL_DATA);
         item.setItemMeta(meta);
         return item;
     }
@@ -786,18 +792,20 @@ public final class SuperweaponService implements Listener {
             return null;
         }
         ItemMeta meta = item.getItemMeta();
-        meta.setDisplayName(MessageService.color("&5&lThe Sarculum"));
+        meta.setDisplayName("The Sarculum");
+        meta.setCustomModelData(19002);
         meta.setLore(List.of(
                 MessageService.color("&7Sneak + left-click: faster, freely steerable dash up to 25 blocks; 2-minute cooldown."),
-                MessageService.color("&7Dash: 16.5 damage (8.25 hearts) in a 4-block radius along the path."),
-                MessageService.color("&7Sneak (Shift) + right-click: slam; 5-minute cooldown."),
+                MessageService.color("&7Dash: 6.75 hearts (13.5 damage points) in a 4-block radius along the path."),
+                MessageService.color("&7Sneak (Shift) + right-click: slam."),
+                MessageService.color("&7Ground slam cooldown: " + formatCooldown("slam", 5 * 60 * 1000L) + "."),
+                MessageService.color("&7Airborne mace slam cooldown: " + formatCooldown("mace-slam", 15 * 60 * 1000L) + "."),
                 MessageService.color("&7Slam: launch up to 8 blocks for one impact."),
                 MessageService.color("&7Airborne with a mace in your hotbar: launch up to 12 blocks for two impacts."),
-                MessageService.color("&7Each slam hit: 24 damage (12 hearts), with no distance falloff."),
-                MessageService.color("&7Airborne with a mace in your hotbar: 36 damage (18 hearts) per hit in a 12-block radius."),
+                MessageService.color("&7Ground slam: up to 18 damage (9 hearts) near the center, falling to half at the 8-block edge."),
+                MessageService.color("&7Airborne mace slam: up to 30 damage (15 hearts) per impact, falling to half at the 12-block edge."),
                 MessageService.color("&8Non-craftable artifact")));
         meta.getPersistentDataContainer().set(artifactKey, PersistentDataType.STRING, "sarculum");
-        meta.setCustomModelData(SARCULUM_CUSTOM_MODEL_DATA);
         XEnchantment.matchXEnchantment("EFFICIENCY").ifPresent(enchant -> meta.addEnchant(enchant.getEnchant(), 5, true));
         XEnchantment.matchXEnchantment("UNBREAKING").ifPresent(enchant -> meta.addEnchant(enchant.getEnchant(), 3, true));
         XEnchantment.matchXEnchantment("MENDING").ifPresent(enchant -> meta.addEnchant(enchant.getEnchant(), 1, true));
@@ -1131,6 +1139,7 @@ public final class SuperweaponService implements Listener {
                 hudVisible = sendCooldownActionBar(player, now, hudVisible);
                 if (player.getPersistentDataContainer().getOrDefault(dashCooldownKey, PersistentDataType.LONG, 0L) <= now
                         && player.getPersistentDataContainer().getOrDefault(slamCooldownKey, PersistentDataType.LONG, 0L) <= now
+                        && player.getPersistentDataContainer().getOrDefault(maceSlamCooldownKey, PersistentDataType.LONG, 0L) <= now
                         && player.getPersistentDataContainer().getOrDefault(activateCooldownKey, PersistentDataType.LONG, 0L) <= now
                         && player.getPersistentDataContainer().getOrDefault(beamCooldownKey, PersistentDataType.LONG, 0L) <= now) {
                     cooldownHudTasks.remove(uuid);
@@ -1147,6 +1156,7 @@ public final class SuperweaponService implements Listener {
         if ("sarculum".equals(heldArtifact)) {
             appendCooldownBar(cooldowns, player, "D", dashCooldownKey, "dash", 2 * 60 * 1000L, now, "&b", "&3");
             appendCooldownBar(cooldowns, player, "S", slamCooldownKey, "slam", 5 * 60 * 1000L, now, "&6", "&e");
+            appendCooldownBar(cooldowns, player, "M", maceSlamCooldownKey, "mace-slam", 15 * 60 * 1000L, now, "&d", "&5");
         } else if ("boc".equals(heldArtifact)) {
             appendCooldownBar(cooldowns, player, "A", activateCooldownKey, "activate", 15 * 60 * 1000L, now, "&d", "&5");
             appendCooldownBar(cooldowns, player, "B", beamCooldownKey, "beam", 10 * 60 * 1000L, now, "&c", "&4");
@@ -1199,49 +1209,36 @@ public final class SuperweaponService implements Listener {
     }
 
     private void refreshHeldArtifactCooldown(Player player, long now) {
-        ItemStack heldItem = player.getInventory().getItemInMainHand();
-        String heldArtifact = artifact(heldItem);
-        if (heldArtifact == null) {
+        String heldArtifact = artifact(player.getInventory().getItemInMainHand());
+        if (heldArtifact != null) {
+            refreshArtifactCooldown(player, heldArtifact, now);
+        }
+    }
+
+    private void refreshArtifactCooldown(Player player, String artifact, long now) {
+        long expiresAt;
+        String materialName;
+        if (artifact.equals("boc")) {
+            expiresAt = Math.max(
+                    player.getPersistentDataContainer().getOrDefault(activateCooldownKey, PersistentDataType.LONG, 0L),
+                    player.getPersistentDataContainer().getOrDefault(beamCooldownKey, PersistentDataType.LONG, 0L));
+            materialName = "SILENCE_ARMOR_TRIM_SMITHING_TEMPLATE";
+        } else if (artifact.equals("sarculum")) {
+            expiresAt = Math.max(
+                    player.getPersistentDataContainer().getOrDefault(dashCooldownKey, PersistentDataType.LONG, 0L),
+                    Math.max(
+                            player.getPersistentDataContainer().getOrDefault(slamCooldownKey, PersistentDataType.LONG, 0L),
+                            player.getPersistentDataContainer().getOrDefault(maceSlamCooldownKey, PersistentDataType.LONG, 0L)));
+            materialName = "NETHERITE_HOE";
+        } else {
             return;
         }
-        long remainingMillis = 0L;
-        if (heldArtifact.equals("boc")) {
-            remainingMillis = Math.max(
-                    player.getPersistentDataContainer().getOrDefault(activateCooldownKey, PersistentDataType.LONG, 0L),
-                    player.getPersistentDataContainer().getOrDefault(beamCooldownKey, PersistentDataType.LONG, 0L)) - now;
-        } else if (heldArtifact.equals("sarculum")) {
-            remainingMillis = Math.max(
-                    player.getPersistentDataContainer().getOrDefault(dashCooldownKey, PersistentDataType.LONG, 0L),
-                    player.getPersistentDataContainer().getOrDefault(slamCooldownKey, PersistentDataType.LONG, 0L)) - now;
-        }
-        if (remainingMillis > 0L) {
-            long ticks = remainingMillis / 50L + (remainingMillis % 50L == 0L ? 0L : 1L);
-            player.setCooldown(heldItem.getType(), (int) Math.min(Integer.MAX_VALUE, ticks));
-        }
-    }
-
-    private void normalizeArtifactModelData(Player player) {
-        normalizeArtifactModelData(player.getInventory());
-        normalizeArtifactModelData(player.getEnderChest());
-    }
-
-    private void normalizeArtifactModelData(Inventory inventory) {
-        for (int slot = 0; slot < inventory.getSize(); slot++) {
-            ItemStack item = inventory.getItem(slot);
-            String artifact = artifact(item);
-            if (artifact == null) {
-                continue;
-            }
-
-            int modelData = artifact.equals("boc") ? BOC_CUSTOM_MODEL_DATA : SARCULUM_CUSTOM_MODEL_DATA;
-            ItemMeta meta = item.getItemMeta();
-            if (meta == null || (meta.hasCustomModelData() && meta.getCustomModelData() == modelData)) {
-                continue;
-            }
-            meta.setCustomModelData(modelData);
-            item.setItemMeta(meta);
-            inventory.setItem(slot, item);
-        }
+        long remainingMillis = expiresAt - now;
+        long ticks = remainingMillis <= 0L ? 0L
+                : remainingMillis / 50L + (remainingMillis % 50L == 0L ? 0L : 1L);
+        XMaterial.matchXMaterial(materialName)
+                .map(XMaterial::parseMaterial)
+                .ifPresent(material -> player.setCooldown(material, (int) Math.min(Integer.MAX_VALUE, ticks)));
     }
 
     private void beam(Player player) {
@@ -1359,8 +1356,7 @@ public final class SuperweaponService implements Listener {
     }
 
     private void shockwave(Player attacker) {
-        Location center = attacker.getLocation().clone().add(0, 0.5, 0);
-        World world = center.getWorld();
+        World world = attacker.getWorld();
         if (world == null) {
             return;
         }
@@ -1376,6 +1372,7 @@ public final class SuperweaponService implements Listener {
                     cancel();
                     return;
                 }
+                Location center = attacker.getLocation().clone().add(0, 0.5, 0);
                 if (ticks % 10 == 0 && ticks < 30) {
                     damageShockwave(attacker, center, world);
                     XSound.matchXSound("ENTITY_WARDEN_SONIC_BOOM").ifPresent(sound -> sound.play(attacker));
@@ -1472,7 +1469,7 @@ public final class SuperweaponService implements Listener {
                 previousLocation = current.clone();
                 Vector dashDirection = direction.normalize();
                 player.setVelocity(player.getVelocity().multiply(0.65).add(dashDirection.clone().multiply(0.8)));
-                strikeNearby(player, current, 4, false, false, hit);
+                strikeNearby(player, current, 4, SARCuLUM_DASH_DAMAGE, hit, false);
                 XParticle.of("SWEEP_ATTACK").ifPresent(particle -> player.getWorld().spawnParticle(
                         particle.get(), current.clone().add(0, 1, 0), 6, 0.25, 0.3, 0.25, 0.01));
                 XParticle.of("CLOUD").ifPresent(particle -> player.getWorld().spawnParticle(
@@ -1498,7 +1495,10 @@ public final class SuperweaponService implements Listener {
 
     private void slam(Player player) {
         boolean aerialSlam = !player.isOnGround() && hasMaceInHotbar(player);
-        if (!startCooldown(player, slamCooldownKey, cooldownDurationMillis("slam", 5 * 60 * 1000L))) {
+        NamespacedKey cooldownKey = aerialSlam ? maceSlamCooldownKey : slamCooldownKey;
+        String cooldownAbility = aerialSlam ? "mace-slam" : "slam";
+        long defaultCooldown = aerialSlam ? 15 * 60 * 1000L : 5 * 60 * 1000L;
+        if (!startCooldown(player, cooldownKey, cooldownDurationMillis(cooldownAbility, defaultCooldown))) {
             return;
         }
         UUID uuid = player.getUniqueId();
@@ -1563,7 +1563,9 @@ public final class SuperweaponService implements Listener {
                     }
                 }
                 if (player.isOnGround() && airborne) {
-                    strikeNearby(player, current, aerialSlam ? 12 : 8, true, aerialSlam, new HashSet<>());
+                    strikeNearby(player, current, aerialSlam ? 12 : 8,
+                            aerialSlam ? SARCULUM_MACE_SLAM_DAMAGE : SARCULUM_GROUND_SLAM_DAMAGE,
+                            new HashSet<>(), true);
                     XSound.matchXSound("ENTITY_GENERIC_EXPLODE").ifPresent(sound -> sound.play(player));
                     XSound.matchXSound("ENTITY_WARDEN_SONIC_BOOM").ifPresent(sound -> sound.play(player));
                     playSlamImpact(current, aerialSlam);
@@ -1579,18 +1581,22 @@ public final class SuperweaponService implements Listener {
                         return;
                     }
                     stopAction(player);
-                    Bukkit.getScheduler().runTaskLater(plugin, () -> fallProtection.remove(uuid), 2L);
+                    Bukkit.getScheduler().runTaskLater(plugin,
+                            () -> fallProtection.remove(uuid, fallProtectionExpiry), 2L);
                     return;
                 }
                 if (!airborne && phaseTicks >= 5) {
                     if (aerialSlam && impacts == 1 && player.isOnGround()) {
-                        strikeNearby(player, current, aerialSlam ? 12 : 8, true, aerialSlam, new HashSet<>());
+                        strikeNearby(player, current, aerialSlam ? 12 : 8,
+                                aerialSlam ? SARCULUM_MACE_SLAM_DAMAGE : SARCULUM_GROUND_SLAM_DAMAGE,
+                                new HashSet<>(), true);
                         XSound.matchXSound("ENTITY_GENERIC_EXPLODE").ifPresent(sound -> sound.play(player));
                         XSound.matchXSound("ENTITY_WARDEN_SONIC_BOOM").ifPresent(sound -> sound.play(player));
                         playSlamImpact(current, aerialSlam);
                         player.setFallDistance(0);
                         stopAction(player);
-                        Bukkit.getScheduler().runTaskLater(plugin, () -> fallProtection.remove(uuid), 2L);
+                        Bukkit.getScheduler().runTaskLater(plugin,
+                                () -> fallProtection.remove(uuid, fallProtectionExpiry), 2L);
                     } else {
                         stopAction(player);
                         fallProtection.remove(uuid);
@@ -1743,45 +1749,27 @@ public final class SuperweaponService implements Listener {
         return false;
     }
 
-    private void strikeNearby(Player attacker, Location center, double radius, boolean slam, boolean aerialSlam,
-                              Set<UUID> hit) {
+    private void strikeNearby(Player attacker, Location center, double radius, double damage, Set<UUID> hit,
+                              boolean distanceFalloff) {
         for (Entity entity : center.getWorld().getNearbyEntities(center, radius, radius, radius)) {
             if (!(entity instanceof LivingEntity target) || target.equals(attacker)
                     || target.isDead() || !target.isValid()) {
                 continue;
             }
             if (target instanceof Player player
-                    && (!center.getWorld().getPVP() || player.getGameMode() == org.bukkit.GameMode.SPECTATOR)) {
+                    && (!center.getWorld().getPVP() || player.getGameMode() == org.bukkit.GameMode.SPECTATOR
+                    || player.getGameMode() == org.bukkit.GameMode.CREATIVE)) {
                 continue;
             }
-            double distance = target.getLocation().distance(center);
-            if (distance > radius || !hit.add(target.getUniqueId())) {
+            double distanceSquared = target.getLocation().distanceSquared(center);
+            if (distanceSquared > radius * radius || !hit.add(target.getUniqueId())) {
                 continue;
             }
-            double damage = aerialSlam ? 36.0 : slam ? 24.0 : 16.5;
             target.setNoDamageTicks(0);
-            double healthBefore = target.getHealth();
-            double absorptionBefore = target.getAbsorptionAmount();
-            if (target instanceof Player player) {
-                altar.damageFromAbility(player, attacker, damage);
-            } else {
-                target.damage(damage, attacker);
-            }
-            if (target.isDead() || !target.isValid()) {
-                continue;
-            }
-            double healthLost = Math.max(0, healthBefore - target.getHealth());
-            double absorptionLost = Math.max(0, absorptionBefore - target.getAbsorptionAmount());
-            double remainingDamage = damage - healthLost - absorptionLost;
-            if (remainingDamage > 0) {
-                double absorption = target.getAbsorptionAmount();
-                double absorbedDamage = Math.min(absorption, remainingDamage);
-                target.setAbsorptionAmount(absorption - absorbedDamage);
-                remainingDamage -= absorbedDamage;
-                if (remainingDamage > 0) {
-                    target.setHealth(Math.max(0, target.getHealth() - remainingDamage));
-                }
-            }
+            double appliedDamage = distanceFalloff
+                    ? damage * (1.0 - 0.5 * distanceSquared / (radius * radius))
+                    : damage;
+            altar.damageFromAbility(target, attacker, appliedDamage);
         }
     }
 
@@ -1842,13 +1830,13 @@ public final class SuperweaponService implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
-        normalizeArtifactModelData(player);
         if (refreshArtifactOwnership(player)) {
             saveArtifactOwnerships();
         }
         long now = System.currentTimeMillis();
         if (player.getPersistentDataContainer().getOrDefault(dashCooldownKey, PersistentDataType.LONG, 0L) > now
                 || player.getPersistentDataContainer().getOrDefault(slamCooldownKey, PersistentDataType.LONG, 0L) > now
+                || player.getPersistentDataContainer().getOrDefault(maceSlamCooldownKey, PersistentDataType.LONG, 0L) > now
                 || player.getPersistentDataContainer().getOrDefault(activateCooldownKey, PersistentDataType.LONG, 0L) > now
                 || player.getPersistentDataContainer().getOrDefault(beamCooldownKey, PersistentDataType.LONG, 0L) > now) {
             startCooldownHud(player);

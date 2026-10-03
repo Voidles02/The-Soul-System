@@ -175,7 +175,9 @@ public final class GuideService {
                         + "Right-click to invoke the book's self-effects. Left-click to channel its beam, followed by a shockwave.\n\n"
                         + "The wielder is immune to damage from both attacks."),
                 page("&5&lTHE SARCULUM", "&8A close-range superweapon\n\n"
-                        + "Dash hits deal &c16.5 damage (8.25 in-game hearts)&7. Slam hits deal &c24 damage (12 in-game hearts)&7. An airborne slam with a mace in your hotbar deals &c36 damage (18 in-game hearts)&7 and has a 4x splash radius."),
+                        + "Sneak + left-click: steerable dash up to 25 blocks, dealing up to &c13.5 damage (6.75 hearts)&7 to targets within 4 blocks of its path.\n\n"
+                        + "Sneak + right-click: slam. Ground slam deals up to &c18 damage (9 hearts)&7 near the center, falling to half at the 8-block edge.\n\n"
+                        + "While airborne with a mace in your hotbar, the slam hits twice. Each impact deals up to &c30 damage (15 hearts)&7, falling to half at the 12-block edge."),
                 page("&5&lSONIC BEAM", "&8Long-range attack\n\n"
                         + "Hold The Book of Bōc and left-click to fire a thick beam up to &b45 blocks&7. It lasts 5 seconds and damages players directly in its path for &c2.5 hearts every 50 milliseconds&7.\n\n"
                         + "The beam has a &b10-minute default cooldown&7. The cooldown appears in the action-bar HUD."),

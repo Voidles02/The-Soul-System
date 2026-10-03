@@ -22,6 +22,7 @@ superweapon:
   cooldowns:
     dash-millis: 120000
     slam-millis: 300000
+    mace-slam-millis: 900000
     activate-millis: 900000
     beam-millis: 600000
   info-book:
@@ -30,7 +31,8 @@ superweapon:
     pages:
       - "&5&lSOUL WEAPON FIELD GUIDE\n\n&7Learn the weapons, cooldowns, and optional Soul features. Cooldown values and feature states reflect this server's settings when opened."
       - "&d&lBOOK OF BŌC\n\n&7Right-click: self-buffs.\nLeft-click: 5-second, 45-block beam followed by 3 shockwaves.\n\n&7Activation: &f{activate-cooldown}\nBeam: &f{beam-cooldown}"
-      - "&5&lTHE SARCULUM\n\n&7Sneak + left-click: steerable dash up to 25 blocks.\nSneak + right-click: slam. Airborne with a mace in your hotbar triggers an enhanced two-impact slam.\n\nDash: &f{dash-cooldown}\nSlam: &f{slam-cooldown}"
+      - "&5&lTHE SARCULUM\n\n&7Sneak + left-click: steerable dash up to 25 blocks.\nSneak + right-click: slam; airborne with a mace in your hotbar triggers two impacts.\n\nDash: &f{dash-cooldown}\nGround slam: &f{slam-cooldown}\nMace slam: &f{mace-slam-cooldown}"
+      - "&5&lSARCULUM DAMAGE\n\n&7Dash: 13.5 damage (6.75 hearts) within 4 blocks of its path.\nGround slam: up to 18 (9 hearts), half at the 8-block edge.\nMace slam: up to 30 (15 hearts) per hit, half at the 12-block edge."
       - "&b&lSOUL SYSTEMS\n\n&7Soul progression, mob rewards, player trading, fragments, Altars, and Shrines are configurable. Use &f/souls &7to view your balance."
       - "&6&lOPTIONAL FEATURES\n\n&7Shop: {shop-status}\nAltar: {altar-status}\nPowers: {powers-status}\nBounties: {bounties-status}\nShrines: {shrines-status}\nRandom events: {events-status}\n\n&8Customize these pages in config.yml."
   artifacts:
@@ -68,9 +70,8 @@ earning:
 fragments:
   enabled: true
   conversion-rate: 10
-  # The custom Soul Fragment texture requires PRISMARINE_SHARD as the base material.
+  # The custom Soul Shard texture requires PRISMARINE_SHARD as the base material.
   item-material: PRISMARINE_SHARD
-  item-name: '&bSoul Fragment'
   pve-drops:
     ZOMBIE: 1
     SKELETON: 1

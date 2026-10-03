@@ -31,9 +31,17 @@ public final class ResourcePackHost {
     private static final String PACK_PATH = "/souls-resource-pack.zip";
     private static final String[] REQUIRED_FILES = {
             "pack.mcmeta",
+            "assets/minecraft/items/prismarine_shard.json",
+            "assets/minecraft/items/silence_armor_trim_smithing_template.json",
+            "assets/minecraft/items/netherite_hoe.json",
+            "assets/minecraft/items/netherite_axe.json",
             "assets/minecraft/models/item/prismarine_shard.json",
             "assets/minecraft/models/item/silence_armor_trim_smithing_template.json",
             "assets/minecraft/models/item/netherite_hoe.json",
+            "assets/minecraft/models/item/netherite_axe.json",
+            "assets/minecraft/optifine/cit/souls/soul_shard.properties",
+            "assets/minecraft/optifine/cit/souls/book_of_boc.properties",
+            "assets/minecraft/optifine/cit/souls/sarculum.properties",
             "assets/souls/models/item/soul_shard.json",
             "assets/souls/models/item/book_of_boc.json",
             "assets/souls/models/item/the_sarculum.json",
@@ -295,15 +303,24 @@ public final class ResourcePackHost {
             return messages;
         }
 
-        checkModel(entries, messages, "assets/minecraft/models/item/prismarine_shard.json", "19000", "souls:item/soul_shard");
-        checkModel(entries, messages, "assets/minecraft/models/item/silence_armor_trim_smithing_template.json", "19001", "souls:item/book_of_boc");
-        checkModel(entries, messages, "assets/minecraft/models/item/netherite_hoe.json", "19002", "souls:item/the_sarculum");
+        checkModel(entries, messages, "assets/minecraft/items/prismarine_shard.json", "19000", "souls:item/soul_shard");
+        checkModel(entries, messages, "assets/minecraft/items/silence_armor_trim_smithing_template.json", "19001", "souls:item/book_of_boc");
+        checkModel(entries, messages, "assets/minecraft/items/netherite_hoe.json", "19002", "souls:item/the_sarculum");
+        String sarculumCit = new String(entries.get("assets/minecraft/optifine/cit/souls/sarculum.properties"),
+                java.nio.charset.StandardCharsets.UTF_8);
+        if (!sarculumCit.contains("items=minecraft:netherite_hoe")
+                || !sarculumCit.contains("nbt.display.Name=The Sarculum")
+                || !sarculumCit.contains("texture=souls:item/the_sarculum")) {
+            messages.add("ERROR: Sarculum CIT rule does not match its hoe item name and texture.");
+        }
         checkTexture(entries, messages, "assets/souls/textures/item/soul_shard.png");
         checkTexture(entries, messages, "assets/souls/textures/item/book_of_boc.png");
         checkTexture(entries, messages, "assets/souls/textures/item/the_sarculum.png");
         checkTextureReference(entries, messages, "assets/souls/models/item/soul_shard.json", "souls:item/soul_shard");
         checkTextureReference(entries, messages, "assets/souls/models/item/book_of_boc.json", "souls:item/book_of_boc");
         checkTextureReference(entries, messages, "assets/souls/models/item/the_sarculum.json", "souls:item/the_sarculum");
+        checkModelParent(entries, messages, "assets/souls/models/item/the_sarculum.json", "minecraft:item/netherite_axe");
+        checkModelParent(entries, messages, "assets/minecraft/models/item/sarculum_named.json", "minecraft:item/netherite_axe");
 
         if (!new String(entries.get("pack.mcmeta"), java.nio.charset.StandardCharsets.UTF_8).contains("\"pack_format\"")) {
             messages.add("ERROR: pack.mcmeta has no pack_format; the client may reject the pack.");
@@ -325,14 +342,16 @@ public final class ResourcePackHost {
             }
         }
         if (messages.stream().noneMatch(line -> line.startsWith("ERROR:"))) {
-            messages.add("OK: All three custom-model-data overrides, model files, and PNG textures are present and linked.");
+            messages.add("OK: All three vanilla item-model overrides, CIT rules, model files, and PNG textures are present and linked.");
         }
         return messages;
     }
 
     private void checkModel(Map<String, byte[]> entries, List<String> messages, String path, String modelData, String model) {
         String json = new String(entries.get(path), java.nio.charset.StandardCharsets.UTF_8);
-        if (!json.contains("\"custom_model_data\": " + modelData) || !json.contains("\"model\": \"" + model + "\"")) {
+        if (!json.contains("\"property\": \"minecraft:custom_model_data\"")
+                || !json.contains("\"threshold\": " + modelData)
+                || !json.contains("\"model\": \"" + model + "\"")) {
             messages.add("ERROR: " + path + " does not map custom model data " + modelData + " to " + model + ".");
         }
     }
@@ -349,6 +368,14 @@ public final class ResourcePackHost {
         String json = new String(entries.get(modelPath), java.nio.charset.StandardCharsets.UTF_8);
         if (!json.contains("\"layer0\": \"" + texture + "\"")) {
             messages.add("ERROR: " + modelPath + " does not reference texture " + texture + ".");
+        }
+    }
+
+    private void checkModelParent(Map<String, byte[]> entries, List<String> messages, String modelPath, String parent) {
+        byte[] model = entries.get(modelPath);
+        if (model == null || !new String(model, java.nio.charset.StandardCharsets.UTF_8)
+                .contains("\"parent\": \"" + parent + "\"")) {
+            messages.add("ERROR: " + modelPath + " does not inherit the " + parent + " handheld model.");
         }
     }
 

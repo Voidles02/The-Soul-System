@@ -101,10 +101,6 @@ public final class SoulsConfig {
         return plugin.getConfig().getString("fragments.item-material", "PRISMARINE_SHARD");
     }
 
-    public String fragmentName() {
-        return plugin.getConfig().getString("fragments.item-name", "&bSoul Fragment");
-    }
-
     public long pveFragmentDrop(EntityType type) {
         return Math.max(0, plugin.getConfig().getLong("fragments.pve-drops." + type.name(), 0));
     }
