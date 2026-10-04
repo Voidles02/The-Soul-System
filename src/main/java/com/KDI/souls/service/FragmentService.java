@@ -3,6 +3,7 @@ package com.KDI.souls.service;
 import com.KDI.souls.config.SoulsConfig;
 import com.KDI.souls.message.MessageService;
 import com.cryptomorin.xseries.XMaterial;
+import com.cryptomorin.xseries.particles.XParticle;
 import org.bukkit.Location;
 import org.bukkit.entity.Player;
 import org.bukkit.inventory.ItemStack;
@@ -12,11 +13,17 @@ import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.NamespacedKey;
 
+import java.util.HashSet;
+import java.util.Set;
+import java.util.UUID;
+
 public final class FragmentService {
     private final JavaPlugin plugin;
     private final SoulService souls;
     private final SoulsConfig config;
     private final NamespacedKey key;
+    private final XParticle claimParticle = XParticle.of("SOUL").orElse(null);
+    private final Set<UUID> playersWithClaimEffect = new HashSet<>();
 
     public FragmentService(JavaPlugin plugin, SoulService souls, SoulsConfig config) {
         this.plugin = plugin;
@@ -47,11 +54,8 @@ public final class FragmentService {
     }
 
     public boolean isFragment(ItemStack item) {
-        if (item == null || !item.hasItemMeta()) {
-            return false;
-        }
-        PersistentDataContainer container = item.getItemMeta().getPersistentDataContainer();
-        return container.has(key, PersistentDataType.BYTE);
+        ItemMeta meta = item == null ? null : item.getItemMeta();
+        return meta != null && meta.getPersistentDataContainer().has(key, PersistentDataType.BYTE);
     }
 
     public long count(Player player) {
@@ -93,7 +97,31 @@ public final class FragmentService {
             return result;
         }
         remove(player, result.amount() * rate);
+        playClaimEffect(player);
         return result;
+    }
+
+    public void playClaimEffect(Player player) {
+        UUID playerId = player.getUniqueId();
+        if (!player.isOnline() || !playersWithClaimEffect.add(playerId)) {
+            return;
+        }
+        if (claimParticle != null) {
+            Location center = player.getLocation();
+            center.add(0, 0.85, 0);
+            for (int i = 0; i < 16; i++) {
+                double angle = 2 * Math.PI * i / 16;
+                double radius = 0.7;
+                Location point = center.clone().add(Math.cos(angle) * radius, Math.sin(angle * 2) * 0.12,
+                        Math.sin(angle) * radius);
+                player.getWorld().spawnParticle(claimParticle.get(), point, 1, 0, 0, 0, 0);
+            }
+            for (int i = 0; i < 4; i++) {
+                player.getWorld().spawnParticle(claimParticle.get(), center.clone().add(0, 0.12 * i, 0),
+                        1, 0, 0, 0, 0);
+            }
+        }
+        plugin.getServer().getScheduler().runTaskLater(plugin, () -> playersWithClaimEffect.remove(playerId), 20L);
     }
 
     private void remove(Player player, long amount) {

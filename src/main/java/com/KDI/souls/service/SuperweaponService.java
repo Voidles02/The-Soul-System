@@ -94,6 +94,10 @@ public final class SuperweaponService implements Listener {
     private final Set<UUID> internalTeleports = new HashSet<>();
     private final Map<UUID, ArtifactOwnership> artifactOwnerships = new HashMap<>();
     private final File artifactOwnershipFile;
+    private final XParticle beamSoulParticle = XParticle.of("SCULK_SOUL").orElse(null);
+    private final XParticle beamEndRodParticle = XParticle.of("END_ROD").orElse(null);
+    private final XParticle beamSonicParticle = XParticle.of("SONIC_BOOM").orElse(null);
+    private final XParticle beamSoulFireParticle = XParticle.of("SOUL_FIRE_FLAME").orElse(null);
 
     public SuperweaponService(JavaPlugin plugin, SoulAltarListener altar, MessageService messages) {
         this.plugin = plugin;
@@ -1285,39 +1289,38 @@ public final class SuperweaponService implements Listener {
         }
         right.normalize();
         Vector up = right.clone().crossProduct(direction).normalize();
-        XParticle soulParticle = XParticle.of("SCULK_SOUL").orElse(null);
-        XParticle endRodParticle = XParticle.of("END_ROD").orElse(null);
-        XParticle sonicParticle = XParticle.of("SONIC_BOOM").orElse(null);
-        XParticle soulFireParticle = XParticle.of("SOUL_FIRE_FLAME").orElse(null);
         for (double distance = 0.5; distance <= 45; distance += 0.5) {
-            Location point = origin.clone().add(direction.clone().multiply(distance));
-            if (soulParticle != null) {
-                world.spawnParticle(soulParticle.get(), point, 1, 0.04, 0.04, 0.04, 0.01);
+            double pointX = origin.getX() + direction.getX() * distance;
+            double pointY = origin.getY() + direction.getY() * distance;
+            double pointZ = origin.getZ() + direction.getZ() * distance;
+            if (beamSoulParticle != null) {
+                world.spawnParticle(beamSoulParticle.get(), pointX, pointY, pointZ, 1, 0.04, 0.04, 0.04, 0.01);
             }
-            if (endRodParticle != null && ((int) (distance * 2)) % 2 == 0) {
-                world.spawnParticle(endRodParticle.get(), point, 1, 0.02, 0.02, 0.02, 0);
+            if (beamEndRodParticle != null && ((int) (distance * 2)) % 2 == 0) {
+                world.spawnParticle(beamEndRodParticle.get(), pointX, pointY, pointZ, 1, 0.02, 0.02, 0.02, 0);
             }
-            double spiralAngle = distance * 2.4;
-            for (int strand = 0; strand < 1; strand++) {
-                double angle = spiralAngle + strand * Math.PI;
-                Location spiral = point.clone()
-                        .add(right.clone().multiply(Math.cos(angle) * 0.28))
-                        .add(up.clone().multiply(Math.sin(angle) * 0.28));
-                if (soulFireParticle != null) {
-                    world.spawnParticle(soulFireParticle.get(), spiral, 1);
-                } else if (endRodParticle != null) {
-                    world.spawnParticle(endRodParticle.get(), spiral, 1);
+            if (beamSoulFireParticle != null || beamEndRodParticle != null) {
+                double horizontal = Math.cos(distance * 2.4) * 0.28;
+                double vertical = Math.sin(distance * 2.4) * 0.28;
+                double spiralX = pointX + right.getX() * horizontal + up.getX() * vertical;
+                double spiralY = pointY + right.getY() * horizontal + up.getY() * vertical;
+                double spiralZ = pointZ + right.getZ() * horizontal + up.getZ() * vertical;
+                if (beamSoulFireParticle != null) {
+                    world.spawnParticle(beamSoulFireParticle.get(), spiralX, spiralY, spiralZ, 1);
+                } else if (beamEndRodParticle != null) {
+                    world.spawnParticle(beamEndRodParticle.get(), spiralX, spiralY, spiralZ, 1);
                 }
             }
-            if (sonicParticle != null && Math.abs(distance / 6.0 - Math.rint(distance / 6.0)) < 0.001) {
-                world.spawnParticle(sonicParticle.get(), point, 1);
+            if (beamSonicParticle != null && Math.abs(distance / 6.0 - Math.rint(distance / 6.0)) < 0.001) {
+                world.spawnParticle(beamSonicParticle.get(), pointX, pointY, pointZ, 1);
             }
         }
         Location candidatesCenter = origin.clone().add(direction.clone().multiply(22.5));
         double xRange = Math.abs(direction.getX()) * 22.5 + 1.5;
         double yRange = Math.abs(direction.getY()) * 22.5 + 1.5;
         double zRange = Math.abs(direction.getZ()) * 22.5 + 1.5;
-        for (Entity entity : world.getNearbyEntities(candidatesCenter, xRange, yRange, zRange)) {
+        for (Entity entity : world.getNearbyEntities(candidatesCenter, xRange, yRange, zRange,
+                entity -> entity instanceof LivingEntity)) {
             if (!(entity instanceof LivingEntity target) || target.equals(attacker)
                     || target.isDead() || !target.isValid()
                     || target instanceof Player targetPlayer
@@ -1376,7 +1379,9 @@ public final class SuperweaponService implements Listener {
                 if (ticks % 10 == 0 && ticks < 30) {
                     damageShockwave(attacker, center, world);
                     XSound.matchXSound("ENTITY_WARDEN_SONIC_BOOM").ifPresent(sound -> sound.play(attacker));
-                    XParticle.of("SONIC_BOOM").ifPresent(particle -> world.spawnParticle(particle.get(), center, 1));
+                    if (beamSonicParticle != null) {
+                        world.spawnParticle(beamSonicParticle.get(), center, 1);
+                    }
                 }
                 int waveTick = ticks % 30;
                 double radius = 40.0 * (waveTick + 1) / 30.0;

@@ -1,6 +1,7 @@
 package com.KDI.souls;
 
 import com.KDI.souls.command.SoulsCommand;
+import com.KDI.souls.command.SoulsPerformanceCommand;
 import com.KDI.souls.config.SoulsConfig;
 import com.KDI.souls.database.DatabaseManager;
 import com.KDI.souls.gui.SoulStatsGui;
@@ -42,6 +43,7 @@ public final class SoulsPlugin extends JavaPlugin {
     private MessageService messageService;
     private DatabaseManager databaseManager;
     private volatile boolean databaseAvailable;
+    private volatile boolean databaseInitializationComplete;
     private SoulService soulService;
     private FragmentService fragmentService;
     private SoulRecipeService recipeService;
@@ -49,7 +51,6 @@ public final class SoulsPlugin extends JavaPlugin {
     @Override
     public void onEnable() {
         saveDefaultConfig();
-        saveResource("messages.yml", false);
 
         soulsConfig = new SoulsConfig(this);
         resourcePackHost = new ResourcePackHost(this);
@@ -61,18 +62,25 @@ public final class SoulsPlugin extends JavaPlugin {
         }
         messageService = new MessageService(this);
         databaseManager = new DatabaseManager(this, soulsConfig);
-        try {
-            databaseManager.initialize();
-            databaseAvailable = true;
-        } catch (Exception exception) {
-            getLogger().severe("Could not initialize the Souls database: " + exception.getMessage());
-            if (!soulsConfig.localDataEnabled()) {
-                getLogger().severe("Local player storage is disabled; Souls cannot start without a database.");
-                getServer().getPluginManager().disablePlugin(this);
+        databaseManager.initialize().whenComplete((ignored, error) -> {
+            if (!isEnabled()) {
                 return;
             }
-            getLogger().warning("Continuing with local player-data fallback. Database-backed leaderboards and combat stats may be unavailable.");
-        }
+            getServer().getScheduler().runTask(this, () -> {
+                databaseInitializationComplete = true;
+                databaseAvailable = error == null;
+                if (error == null) {
+                    return;
+                }
+                getLogger().severe("Could not initialize the Souls database: " + error.getMessage());
+                if (!soulsConfig.localDataEnabled()) {
+                    getLogger().severe("Local player storage is disabled; Souls cannot start without a database.");
+                    getServer().getPluginManager().disablePlugin(this);
+                    return;
+                }
+                getLogger().warning("Continuing with local player-data fallback. Database-backed leaderboards and combat stats may be unavailable.");
+            });
+        });
 
         soulService = new SoulService(this, databaseManager, soulsConfig);
         fragmentService = new FragmentService(this, soulService, soulsConfig);
@@ -92,22 +100,25 @@ public final class SoulsPlugin extends JavaPlugin {
                 new com.KDI.souls.listener.SoulShrineListener(this, soulService, fragmentService, soulsConfig, messageService, structures), this);
         getServer().getScheduler().runTaskTimer(this,
                 () -> Bukkit.getOnlinePlayers().forEach(soulService::ensureBoost), 40L, 40L);
-        getServer().getScheduler().runTaskTimerAsynchronously(this, () -> {
+        getServer().getScheduler().runTaskTimer(this, soulService::evictOfflineBalances, 1200L, 1200L);
+        getServer().getScheduler().runTaskTimer(this, () -> {
             if (databaseManager.isAvailable()) {
                 databaseAvailable = true;
                 return;
             }
             databaseAvailable = false;
             databaseManager.retryInitialize().thenAccept(recovered -> {
-                if (!recovered) {
+                if (!recovered || !isEnabled()) {
                     return;
                 }
-                databaseAvailable = true;
-                getLogger().info("Souls database connection recovered; synchronizing cached balances.");
-                soulService.persistAll().exceptionally(error -> {
-                    getLogger().severe("Could not synchronize cached Souls balances after database recovery: "
-                            + error.getMessage());
-                    return null;
+                getServer().getScheduler().runTask(this, () -> {
+                    databaseAvailable = true;
+                    getLogger().info("Souls database connection recovered; synchronizing cached balances.");
+                    soulService.persistAll().exceptionally(error -> {
+                        getLogger().severe("Could not synchronize cached Souls balances after database recovery: "
+                                + error.getMessage());
+                        return null;
+                    });
                 });
             });
         }, 1200L, 1200L);
@@ -119,6 +130,8 @@ public final class SoulsPlugin extends JavaPlugin {
         getCommand("souls").setExecutor(command);
         getCommand("souls").setTabCompleter(command);
         getCommand("guide").setExecutor(new GuideCommand(guideService, messageService));
+        getCommand("souls-performance").setExecutor(
+                new SoulsPerformanceCommand(this, messageService));
 
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             new SoulsPlaceholderExpansion(this, soulService, soulsConfig).register();
@@ -170,6 +183,7 @@ public final class SoulsPlugin extends JavaPlugin {
                 int retries = resourcePackRetries.getOrDefault(playerId, 0);
                 if (retries >= MAX_RESOURCE_PACK_RETRIES) {
                     resourcePackRequests.remove(playerId);
+                    resourcePackRetries.remove(playerId);
                     getLogger().warning("Resource pack failed for " + player.getName()
                             + " after " + retries + " retries.");
                     return;
@@ -222,6 +236,11 @@ public final class SoulsPlugin extends JavaPlugin {
         long maxMemory = runtime.maxMemory() / 1_048_576;
         boolean resourcePackAvailable = resourcePackHost != null && resourcePackHost.getPublicUrl() != null;
         boolean placeholderApiEnabled = Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI");
+        boolean systemFilesPresent = new java.io.File(getDataFolder(), "config.yml").isFile()
+                && new java.io.File(getDataFolder(), "messages.yml").isFile();
+        boolean commandsRegistered = getCommand("souls") != null && getCommand("guide") != null;
+        String storageStatus = databaseAvailable ? "Database initialized"
+                : databaseInitializationComplete ? "Unavailable; local fallback active" : "Database initialization pending";
 
         getLogger().info("§a╔" + "═".repeat(76) + "╗");
         logBannerLine("SOULS  //  STARTUP REPORT");
@@ -247,15 +266,15 @@ public final class SoulsPlugin extends JavaPlugin {
         logBannerLine("Plugins      " + Bukkit.getPluginManager().getPlugins().length + " loaded");
         logBannerLine("PlaceholderAPI " + (placeholderApiEnabled ? "enabled" : "not detected"));
         logBannerLine("Resource pack " + (resourcePackAvailable ? "self-hosted" : "host/pack unavailable"));
+        logBannerLine("System files  " + (systemFilesPresent ? "config.yml and messages.yml present" : "managed file missing"));
+        logBannerLine("Commands     " + (commandsRegistered ? "/souls and /guide registered" : "required command missing"));
         logBannerLine("");
         logBannerLine("SOULS SYSTEMS");
         logBannerLine("Progression  Souls, fragments, boosts");
         logBannerLine("Content      Altars, shrines, recipes");
         logBannerLine("Weapons      Sarculum and Book of Bōc");
         logBannerLine("Interfaces   Guide, stats, commands");
-        logBannerLine("Storage      " + (databaseAvailable
-                ? "Database initialized"
-                : "Database unavailable; local fallback active"));
+        logBannerLine("Storage      " + storageStatus);
         logBannerLine("");
         logBannerLine("STARTUP CHECK  |  " + updatedFiles.size() + " file(s) updated");
         if (updatedFiles.isEmpty()) {
@@ -275,8 +294,12 @@ public final class SoulsPlugin extends JavaPlugin {
     public void onDisable() {
         try {
             if (soulService != null) {
-                soulService.persistAll().join();
+                Bukkit.getOnlinePlayers().forEach(soulService::clearBoostEffects);
+                soulService.persistAll().get(10, java.util.concurrent.TimeUnit.SECONDS);
             }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            getLogger().warning("Interrupted while persisting soul balances during shutdown.");
         } catch (Exception exception) {
             getLogger().severe("Could not persist soul balances during shutdown: " + exception.getMessage());
         } finally {
@@ -287,23 +310,24 @@ public final class SoulsPlugin extends JavaPlugin {
             if (databaseManager != null) {
                 databaseManager.close();
             }
+            if (soulService != null) {
+                soulService.close();
+            }
         }
     }
 
-    public boolean reloadSettings() {
+    public java.util.concurrent.CompletableFuture<Boolean> reloadSettings() {
         reloadConfig();
         soulsConfig.reload();
         messageService.reload();
         recipeService.registerRecipes();
-        try {
-            databaseManager.initialize();
-            databaseAvailable = true;
-            return true;
-        } catch (Exception exception) {
-            databaseAvailable = false;
-            getLogger().severe("Could not initialize the reloaded Souls database settings: " + exception.getMessage());
-            return false;
-        }
+        return databaseManager.initialize().handle((ignored, error) -> {
+            databaseAvailable = error == null;
+            if (error != null) {
+                getLogger().severe("Could not initialize the reloaded Souls database settings: " + error.getMessage());
+            }
+            return error == null;
+        });
     }
 
     public ResourcePackHost.AuditResult repairResourcePack() {

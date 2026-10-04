@@ -1,7 +1,18 @@
 {
   "pack": {
     "pack_format": 75,
-    "description": "Souls item textures for Minecraft 1.21.11 (vanilla and CIT Resewn Continuation)",
+    "description": {
+      "text": "✦ ",
+      "color": "dark_purple",
+      "bold": true,
+      "extra": [
+        {"text": "The ", "color": "light_purple"},
+        {"text": "DespairSMP ", "color": "dark_purple"},
+        {"text": "TexturePack ", "color": "aqua"},
+        {"text": "v7", "color": "gold"},
+        {"text": " ✦", "color": "dark_purple"}
+      ]
+    },
     "min_format": 75,
     "max_format": 75
   }

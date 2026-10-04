@@ -82,6 +82,7 @@ public final class SoulListener implements Listener {
             }
             held.setAmount(held.getAmount() - 1);
             messages.send(player, "fragment-collected", Map.of("amount", result.amount()));
+            fragments.playClaimEffect(player);
         }));
     }
 

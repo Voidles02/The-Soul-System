@@ -42,8 +42,14 @@ public final class SoulsPlaceholderExpansion extends PlaceholderExpansion {
         if (player == null) {
             return "0";
         }
+        String placeholder = params.toLowerCase();
+        if ((placeholder.equals("balance") || placeholder.equals("souls") || placeholder.equals("boost_level"))
+                && !souls.hasCachedBalance(player.getUniqueId())
+                && (souls.isBalanceReady(player.getUniqueId()) || plugin.getDatabaseManager().isAvailable())) {
+            souls.loadBalance(player.getUniqueId());
+        }
         long balance = souls.getBalance(player.getUniqueId());
-        return switch (params.toLowerCase()) {
+        return switch (placeholder) {
             case "balance", "souls" -> String.valueOf(balance);
             case "max" -> String.valueOf(config.maxBalance());
             case "boost_level" -> String.valueOf(balance / config.boostSoulsPerStep());

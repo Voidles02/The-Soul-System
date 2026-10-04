@@ -27,6 +27,10 @@ public final class SoulService {
     private final LocalSoulStore localStore;
     private final Map<UUID, Long> balances = new ConcurrentHashMap<>();
     private final Map<UUID, String> playerNames = new ConcurrentHashMap<>();
+    private final Map<UUID, Object> saveVersions = new HashMap<>();
+    private final Map<UUID, CompletableFuture<Void>> lastSaves = new HashMap<>();
+    private final Set<UUID> pendingDatabaseSync = new HashSet<>();
+    private final Map<UUID, Long> lastAccess = new ConcurrentHashMap<>();
     private final Map<UUID, CompletableFuture<Long>> loading = new ConcurrentHashMap<>();
     private final Set<UUID> unresolvedBalances = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Set<PotionEffectType>> ownedBoostEffects = new ConcurrentHashMap<>();
@@ -39,45 +43,91 @@ public final class SoulService {
         this.localStore = new LocalSoulStore(plugin, config);
     }
 
-    public CompletableFuture<Long> loadBalance(UUID uuid) {
+    public synchronized CompletableFuture<Long> loadBalance(UUID uuid) {
+        lastAccess.put(uuid, System.nanoTime());
         Long loaded = balances.get(uuid);
         if (loaded != null) {
             return CompletableFuture.completedFuture(loaded);
         }
-        return loading.computeIfAbsent(uuid, key -> database.loadBalance(key).handle((databaseValue, error) -> {
-            LocalSoulStore.StoredData local = localStore.load(key);
-            if (error != null && local == null) {
-                unresolvedBalances.add(key);
-                plugin.getLogger().warning("Could not load souls for " + key
-                        + " and no local backup exists; balance changes are blocked until the database recovers.");
-                return 0L;
+        CompletableFuture<Long> existing = loading.get(uuid);
+        if (existing != null) {
+            return existing;
+        }
+        CompletableFuture<Long> result = new CompletableFuture<>();
+        loading.put(uuid, result);
+        long maximum = config.maxBalance();
+        database.loadBalance(uuid).handleAsync((databaseValue, error) -> {
+            LocalSoulStore.StoredData local = localStore.load(uuid);
+            synchronized (this) {
+                if (error != null && local == null) {
+                    unresolvedBalances.add(uuid);
+                    plugin.getLogger().warning("Could not load souls for " + uuid
+                            + " and no local backup exists; balance changes are blocked until the database recovers.");
+                    return 0L;
+                }
+                unresolvedBalances.remove(uuid);
+                boolean useLocal = error != null || local != null && local.databasePending();
+                long value = useLocal ? local == null ? 0L : local.souls() : databaseValue;
+                long safeValue = Math.max(0, Math.min(maximum, value));
+                balances.put(uuid, safeValue);
+                String name = playerNames.getOrDefault(uuid, local == null ? "" : local.name());
+                if (!name.isBlank()) {
+                    playerNames.putIfAbsent(uuid, name);
+                }
+                if (useLocal) {
+                    pendingDatabaseSync.add(uuid);
+                } else {
+                    pendingDatabaseSync.remove(uuid);
+                }
+                lastSaves.put(uuid, localStore.saveAsync(uuid, name, safeValue, maximum, "load", useLocal));
+                if (error == null && local != null && local.databasePending()) {
+                    syncPendingBalance(uuid, name, safeValue);
+                }
+                return safeValue;
             }
-            unresolvedBalances.remove(key);
-            boolean useLocal = error != null || local != null && local.databasePending();
-            long value = useLocal ? local == null ? 0L : local.souls() : databaseValue;
-            long safeValue = Math.max(0, Math.min(config.maxBalance(), value));
-            balances.put(key, safeValue);
-            String name = playerNames.getOrDefault(key, local == null ? "" : local.name());
-            localStore.save(key, name, safeValue, config.maxBalance(), "load", useLocal);
-            if (error == null && local != null && local.databasePending()) {
-                syncPendingBalance(key, name, safeValue);
+        }).whenComplete((value, error) -> {
+            synchronized (this) {
+                loading.remove(uuid, result);
+                lastAccess.put(uuid, System.nanoTime());
             }
-            return safeValue;
-        }).whenComplete((value, error) -> loading.remove(key)));
+            if (error == null) {
+                result.complete(value);
+            } else {
+                result.completeExceptionally(error);
+            }
+        });
+        return result;
     }
 
     public void rememberPlayer(UUID uuid, String name) {
+        lastAccess.put(uuid, System.nanoTime());
         if (name != null && !name.isBlank()) {
             playerNames.put(uuid, name);
         }
     }
 
     public long getBalance(UUID uuid) {
-        return balances.getOrDefault(uuid, 0L);
+        Long balance = balances.get(uuid);
+        if (balance != null) {
+            lastAccess.put(uuid, System.nanoTime());
+        }
+        return balance == null ? 0L : balance;
     }
 
     public boolean isBalanceReady(UUID uuid) {
         return !unresolvedBalances.contains(uuid);
+    }
+
+    public boolean hasCachedBalance(UUID uuid) {
+        return balances.containsKey(uuid);
+    }
+
+    public int getCachedBalanceCount() {
+        return balances.size();
+    }
+
+    public int getPendingBalanceLoadCount() {
+        return loading.size();
     }
 
     public long getRemainingCapacity(UUID uuid) {
@@ -97,6 +147,27 @@ public final class SoulService {
                 .map(entry -> persist(entry.getKey(), entry.getValue(), "shutdown"))
                 .toArray(CompletableFuture[]::new);
         return CompletableFuture.allOf(saves);
+    }
+
+    public synchronized void evictOfflineBalances() {
+        long cutoff = System.nanoTime() - java.util.concurrent.TimeUnit.MINUTES.toNanos(5);
+        if (!database.isAvailable() && !config.localDataEnabled()) {
+            return;
+        }
+        for (Map.Entry<UUID, Long> entry : lastAccess.entrySet()) {
+            UUID uuid = entry.getKey();
+            CompletableFuture<Void> save = lastSaves.get(uuid);
+            if (entry.getValue() > cutoff || Bukkit.getPlayer(uuid) != null || loading.containsKey(uuid)
+                    || unresolvedBalances.contains(uuid) || saveVersions.containsKey(uuid) || pendingDatabaseSync.contains(uuid)
+                    || save != null && (!save.isDone() || save.isCompletedExceptionally())) {
+                continue;
+            }
+            balances.remove(uuid);
+            playerNames.remove(uuid);
+            unresolvedBalances.remove(uuid);
+            lastSaves.remove(uuid);
+            lastAccess.remove(uuid);
+        }
     }
 
     public OperationResult addSouls(UUID uuid, long requested, String reason) {
@@ -207,33 +278,50 @@ public final class SoulService {
         return localStore.load(uuid);
     }
 
-    private CompletableFuture<Void> persist(UUID uuid, long balance, String reason) {
+    private synchronized CompletableFuture<Void> persist(UUID uuid, long balance, String reason) {
+        lastAccess.put(uuid, System.nanoTime());
         String name = playerNames.getOrDefault(uuid, "");
-        localStore.save(uuid, name, balance, config.maxBalance(), reason, true);
+        long maxBalance = config.maxBalance();
+        Object version = new Object();
+        saveVersions.put(uuid, version);
+        pendingDatabaseSync.add(uuid);
+        CompletableFuture<Void> localSave = localStore.saveAsync(uuid, name, balance, maxBalance, reason, true);
         if (!database.isAvailable()) {
-            return CompletableFuture.completedFuture(null);
+            saveVersions.remove(uuid, version);
+            lastSaves.put(uuid, localSave);
+            return localSave;
         }
-        return database.saveBalance(uuid, balance).whenComplete((ignored, error) -> {
-            if (error == null) {
-                localStore.save(uuid, name, balance, config.maxBalance(), reason, false);
-            } else {
-                plugin.getLogger().warning("Could not persist souls for " + uuid
-                        + "; the local copy is marked for database recovery: " + error.getMessage());
-                localStore.save(uuid, name, balance, config.maxBalance(), reason, true);
+        CompletableFuture<Void> databaseSave = database.saveBalance(uuid, balance).handle((ignored, error) -> {
+            synchronized (this) {
+                if (error != null) {
+                    plugin.getLogger().warning("Could not persist souls for " + uuid
+                            + "; the local copy is marked for database recovery: " + error.getMessage());
+                }
+                if (!saveVersions.remove(uuid, version)) {
+                    return CompletableFuture.<Void>completedFuture(null);
+                }
+                if (error == null) {
+                    pendingDatabaseSync.remove(uuid);
+                    return localStore.saveAsync(uuid, name, balance, maxBalance, reason, false);
+                }
+                return CompletableFuture.<Void>failedFuture(error);
             }
-        });
+        }).thenCompose(completion -> completion);
+        CompletableFuture<Void> completion = CompletableFuture.allOf(localSave, databaseSave);
+        lastSaves.put(uuid, completion);
+        return completion;
     }
 
     private void syncPendingBalance(UUID uuid, String name, long balance) {
-        database.saveBalance(uuid, balance).whenComplete((ignored, error) -> {
-            if (error == null) {
-                localStore.save(uuid, name, balance, config.maxBalance(), "database-recovery", false);
-            } else {
+        persist(uuid, balance, "database-recovery").exceptionally(error -> {
                 plugin.getLogger().warning("Could not synchronize recovered local souls for " + uuid
                         + ": " + error.getMessage());
-                localStore.save(uuid, name, balance, config.maxBalance(), "database-recovery", true);
-            }
+                return null;
         });
+    }
+
+    public void close() {
+        localStore.close();
     }
 
     public void applyBoost(UUID uuid) {

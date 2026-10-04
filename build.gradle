@@ -24,12 +24,15 @@ tasks.withType(JavaCompile).configureEach {
 }
 
 processResources {
+    filesMatching('plugin.yml') {
+        expand(version: project.version)
+    }
+}
+
+tasks.named('jar') {
     dependsOn tasks.named('resourcePackZip')
     from(tasks.named('resourcePackZip').flatMap { it.archiveFile }) {
         into('resources')
-    }
-    filesMatching('plugin.yml') {
-        expand(version: project.version)
     }
 }
 

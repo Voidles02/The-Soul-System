@@ -12,6 +12,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Properties;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
@@ -23,6 +24,8 @@ public final class DatabaseManager {
     private final JavaPlugin plugin;
     private final SoulsConfig config;
     private volatile boolean available;
+    private volatile DatabaseSettings settings;
+    private CompletableFuture<Void> initialization;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "souls-database");
         thread.setDaemon(true);
@@ -32,19 +35,38 @@ public final class DatabaseManager {
     public DatabaseManager(JavaPlugin plugin, SoulsConfig config) {
         this.plugin = plugin;
         this.config = config;
+        this.settings = captureSettings();
     }
 
-    public void initialize() throws SQLException {
-        available = false;
+    public synchronized CompletableFuture<Void> initialize() {
+        DatabaseSettings updated = captureSettings();
+        initialization = CompletableFuture.runAsync(() -> {
+            settings = updated;
+            initializeSchema();
+        }, executor);
+        return initialization;
+    }
+
+    private DatabaseSettings captureSettings() {
         String type = config.databaseType();
+        File file = new File(plugin.getDataFolder(), config.sqliteFile());
+        String url = type.equals("sqlite") ? "jdbc:sqlite:" + file.getAbsolutePath()
+                : "jdbc:mariadb://" + config.databaseHost() + ":" + config.databasePort()
+                + "/" + config.databaseName() + config.databaseParameters();
+        return new DatabaseSettings(type, file, url, config.databaseUsername(), config.databasePassword());
+    }
+
+    private void initializeSchema() {
+        available = false;
+        String type = settings.type();
         if (!type.equals("sqlite") && !type.equals("mariadb")) {
-            throw new SQLException("Unsupported database.type '" + type + "'. Use 'sqlite' or 'mariadb'.");
+            throw new CompletionException(new SQLException("Unsupported database.type '" + type
+                    + "'. Use 'sqlite' or 'mariadb'."));
         }
         if (type.equals("sqlite")) {
-            File databaseFile = new File(plugin.getDataFolder(), config.sqliteFile());
-            File parent = databaseFile.getParentFile();
+            File parent = settings.file().getParentFile();
             if (parent != null && !parent.isDirectory() && !parent.mkdirs() && !parent.isDirectory()) {
-                throw new SQLException("Could not create SQLite database directory: " + parent);
+                throw new CompletionException(new SQLException("Could not create SQLite database directory: " + parent));
             }
         }
         try (Connection connection = connection(); Statement statement = connection.createStatement()) {
@@ -55,19 +77,15 @@ public final class DatabaseManager {
             available = true;
         } catch (SQLException exception) {
             available = false;
-            throw exception;
+            throw new CompletionException(exception);
         }
     }
 
-    public CompletableFuture<Boolean> retryInitialize() {
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                initialize();
-                return true;
-            } catch (SQLException exception) {
-                return false;
-            }
-        }, executor);
+    public synchronized CompletableFuture<Boolean> retryInitialize() {
+        if (initialization == null || initialization.isDone()) {
+            initialization = CompletableFuture.runAsync(this::initializeSchema, executor);
+        }
+        return initialization.handle((ignored, error) -> error == null);
     }
 
     public boolean isAvailable() {
@@ -75,13 +93,19 @@ public final class DatabaseManager {
     }
 
     private Connection connection() throws SQLException {
-        if (config.databaseType().equals("sqlite")) {
-            File file = new File(plugin.getDataFolder(), config.sqliteFile());
-            return DriverManager.getConnection("jdbc:sqlite:" + file.getAbsolutePath());
+        DatabaseSettings current = settings;
+        if (current.type().equals("sqlite")) {
+            return DriverManager.getConnection(current.url());
         }
-        String url = "jdbc:mariadb://" + config.databaseHost() + ":" + config.databasePort()
-                + "/" + config.databaseName() + config.databaseParameters();
-        return DriverManager.getConnection(url, config.databaseUsername(), config.databasePassword());
+        Properties properties = new Properties();
+        properties.setProperty("user", current.username());
+        properties.setProperty("password", current.password());
+        properties.setProperty("connectTimeout", "5000");
+        properties.setProperty("socketTimeout", "10000");
+        return DriverManager.getConnection(current.url(), properties);
+    }
+
+    private record DatabaseSettings(String type, File file, String url, String username, String password) {
     }
 
     public CompletableFuture<Long> loadBalance(UUID uuid) {

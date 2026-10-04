@@ -2,6 +2,7 @@ package com.KDI.souls.system;
 
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.configuration.InvalidConfigurationException;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.io.File;
@@ -23,22 +24,23 @@ public final class PluginSystemsChecker {
     public List<String> checkAndUpdate() {
         List<String> updatedFiles = new ArrayList<>();
         plugin.getLogger().info("Running Souls systems check...");
-        try {
-            for (String resourceName : MANAGED_RESOURCES) {
+        for (String resourceName : MANAGED_RESOURCES) {
+            try {
                 if (updateYamlFile(resourceName)) {
                     updatedFiles.add(resourceName);
                 }
+            } catch (IOException | InvalidConfigurationException exception) {
+                plugin.getLogger().warning("Could not check " + resourceName + ": " + exception.getMessage());
             }
-            plugin.getLogger().info(updatedFiles.isEmpty()
-                    ? "Souls systems check complete. No files needed updating."
-                    : "Souls systems check complete. Updated files: " + String.join(", ", updatedFiles));
-        } catch (IOException exception) {
-            plugin.getLogger().severe("Souls systems check failed: " + exception.getMessage());
         }
+        plugin.getLogger().info("Souls systems check complete. Checked " + MANAGED_RESOURCES.size()
+                + " managed files; " + (updatedFiles.isEmpty()
+                ? "no files needed updating."
+                : "updated: " + String.join(", ", updatedFiles)));
         return updatedFiles;
     }
 
-    private boolean updateYamlFile(String resourceName) throws IOException {
+    private boolean updateYamlFile(String resourceName) throws IOException, InvalidConfigurationException {
         File file = new File(plugin.getDataFolder(), resourceName);
         if (!file.isFile()) {
             plugin.saveResource(resourceName, false);
@@ -47,12 +49,14 @@ public final class PluginSystemsChecker {
 
         try (InputStream resource = plugin.getResource(resourceName)) {
             if (resource == null) {
+                plugin.getLogger().warning("Bundled system resource " + resourceName + " is missing.");
                 return false;
             }
 
-            FileConfiguration current = YamlConfiguration.loadConfiguration(file);
-            YamlConfiguration defaults = YamlConfiguration.loadConfiguration(
-                    new InputStreamReader(resource, StandardCharsets.UTF_8));
+            FileConfiguration current = new YamlConfiguration();
+            current.load(file);
+            YamlConfiguration defaults = new YamlConfiguration();
+            defaults.load(new InputStreamReader(resource, StandardCharsets.UTF_8));
             boolean changed = migrateLegacyDefaults(current, defaults, resourceName);
             for (String path : defaults.getKeys(true)) {
                 if (!defaults.isConfigurationSection(path) && !current.contains(path)) {

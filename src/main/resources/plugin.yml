@@ -17,9 +17,15 @@ commands:
     usage: /guide
     aliases:
       - soul-guide
+  souls-performance:
+    description: View Souls and server performance metrics.
+    usage: /souls-performance
 permissions:
   souls.use:
     description: Use the Souls command.
+    default: true
+  souls.performance:
+    description: View the Souls performance report.
     default: true
   souls.pay:
     description: Pay Souls to another player.

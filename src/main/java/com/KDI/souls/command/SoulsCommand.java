@@ -488,11 +488,12 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         if (!requireAdmin(sender)) {
             return;
         }
-        if (plugin.reloadSettings()) {
-            messages.send(sender, "reload");
-        } else {
-            messages.send(sender, "database-reload-failed");
-        }
+        plugin.reloadSettings().thenAccept(success -> {
+            if (plugin.isEnabled()) {
+                plugin.getServer().getScheduler().runTask(plugin,
+                        () -> messages.send(sender, success ? "reload" : "database-reload-failed"));
+            }
+        });
     }
 
     private void textures(CommandSender sender) {

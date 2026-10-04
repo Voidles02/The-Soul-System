@@ -22,7 +22,9 @@ public final class MessageService {
     public void reload() {
         plugin.reloadConfig();
         messages = plugin.getConfig();
-        plugin.saveResource("messages.yml", false);
+        if (!new java.io.File(plugin.getDataFolder(), "messages.yml").exists()) {
+            plugin.saveResource("messages.yml", false);
+        }
         plugin.getConfig().options().copyDefaults(true);
         messages = plugin.getConfig();
         try {
