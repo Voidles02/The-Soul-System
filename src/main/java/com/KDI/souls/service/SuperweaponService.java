@@ -62,6 +62,10 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.TimeUnit;
 import java.io.File;
 import java.io.IOException;
 import java.time.Instant;
@@ -94,10 +98,21 @@ public final class SuperweaponService implements Listener {
     private final Set<UUID> internalTeleports = new HashSet<>();
     private final Map<UUID, ArtifactOwnership> artifactOwnerships = new HashMap<>();
     private final File artifactOwnershipFile;
+    private final Object artifactSaveLock = new Object();
+    private final ExecutorService artifactSaveExecutor = Executors.newSingleThreadExecutor(runnable -> {
+        Thread thread = new Thread(runnable, "Souls-artifact-storage");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private Map<UUID, ArtifactOwnership> pendingArtifactSnapshot;
+    private boolean artifactSaveWorkerRunning;
     private final XParticle beamSoulParticle = XParticle.of("SCULK_SOUL").orElse(null);
     private final XParticle beamEndRodParticle = XParticle.of("END_ROD").orElse(null);
     private final XParticle beamSonicParticle = XParticle.of("SONIC_BOOM").orElse(null);
     private final XParticle beamSoulFireParticle = XParticle.of("SOUL_FIRE_FLAME").orElse(null);
+    private final XParticle slamSmokeParticle = XParticle.of("SMOKE").orElse(null);
+    private final XParticle slamCloudParticle = XParticle.of("CLOUD").orElse(null);
+    private final XParticle slamCritParticle = XParticle.of("CRIT").orElse(null);
 
     public SuperweaponService(JavaPlugin plugin, SoulAltarListener altar, MessageService messages) {
         this.plugin = plugin;
@@ -722,8 +737,44 @@ public final class SuperweaponService implements Listener {
     }
 
     private void saveArtifactOwnerships() {
+        Map<UUID, ArtifactOwnership> snapshot = new HashMap<>();
+        artifactOwnerships.forEach((id, ownership) -> snapshot.put(id, new ArtifactOwnership(
+                ownership.artifact(), ownership.owner(), ownership.ownerName(), ownership.startedAt(),
+                List.copyOf(ownership.profiles()))));
+        synchronized (artifactSaveLock) {
+            pendingArtifactSnapshot = Map.copyOf(snapshot);
+            if (artifactSaveWorkerRunning) {
+                return;
+            }
+            artifactSaveWorkerRunning = true;
+            try {
+                artifactSaveExecutor.execute(this::writePendingArtifactOwnerships);
+            } catch (RejectedExecutionException exception) {
+                artifactSaveWorkerRunning = false;
+                plugin.getLogger().warning("Could not queue artifact ownership data for saving: " + exception.getMessage());
+            }
+        }
+    }
+
+    private void writePendingArtifactOwnerships() {
+        while (true) {
+            Map<UUID, ArtifactOwnership> snapshot;
+            synchronized (artifactSaveLock) {
+                snapshot = pendingArtifactSnapshot;
+                pendingArtifactSnapshot = null;
+                if (snapshot == null) {
+                    artifactSaveWorkerRunning = false;
+                    artifactSaveLock.notifyAll();
+                    return;
+                }
+            }
+            writeArtifactOwnerships(snapshot);
+        }
+    }
+
+    private void writeArtifactOwnerships(Map<UUID, ArtifactOwnership> snapshot) {
         YamlConfiguration data = new YamlConfiguration();
-        artifactOwnerships.forEach((id, ownership) -> {
+        snapshot.forEach((id, ownership) -> {
             String path = "artifacts." + id;
             data.set(path + ".type", ownership.artifact());
             data.set(path + ".owner", ownership.owner() == null ? null : ownership.owner().toString());
@@ -746,6 +797,20 @@ public final class SuperweaponService implements Listener {
             data.save(artifactOwnershipFile);
         } catch (IOException exception) {
             plugin.getLogger().warning("Could not save artifact ownership data: " + exception.getMessage());
+        }
+    }
+
+    public void shutdownArtifactPersistence() {
+        artifactSaveExecutor.shutdown();
+        try {
+            if (!artifactSaveExecutor.awaitTermination(10, TimeUnit.SECONDS)) {
+                artifactSaveExecutor.shutdownNow();
+                plugin.getLogger().warning("Artifact ownership save did not finish before shutdown.");
+            }
+        } catch (InterruptedException exception) {
+            artifactSaveExecutor.shutdownNow();
+            Thread.currentThread().interrupt();
+            plugin.getLogger().warning("Interrupted while saving artifact ownership data during shutdown.");
         }
     }
 
@@ -1068,24 +1133,24 @@ public final class SuperweaponService implements Listener {
                 }
                 Location center = player.getLocation();
                 double rotation = ticks * Math.PI / 16;
-                XParticle.of("END_ROD").ifPresent(particle -> {
+                if (beamEndRodParticle != null) {
                     for (int point = 0; point < 6; point++) {
                         double angle = rotation + Math.PI * 2 * point / 6;
                         Location sparkle = center.clone().add(Math.cos(angle) * 0.9,
                                 0.2 + (point % 6) * 0.28 + Math.sin(rotation + point) * 0.08,
                                 Math.sin(angle) * 0.75);
-                        player.getWorld().spawnParticle(particle.get(), sparkle, 1, 0, 0, 0, 0);
+                        player.getWorld().spawnParticle(beamEndRodParticle.get(), sparkle, 1, 0, 0, 0, 0);
                     }
-                });
-                XParticle.of("SCULK_SOUL").ifPresent(particle -> {
+                }
+                if (beamSoulParticle != null) {
                     for (int point = 0; point < 3; point++) {
                         double angle = -rotation * 1.4 + Math.PI * 2 * point / 6;
                         Location soul = center.clone().add(Math.cos(angle) * 0.5,
                                 0.55 + point * 0.2 + Math.sin(rotation + point) * 0.1,
                                 Math.sin(angle) * 0.48);
-                        player.getWorld().spawnParticle(particle.get(), soul, 1, 0, 0, 0, 0);
+                        player.getWorld().spawnParticle(beamSoulParticle.get(), soul, 1, 0, 0, 0, 0);
                     }
-                });
+                }
                 ticks++;
             }
         }.runTaskTimer(plugin, 0L, 2L);
@@ -1546,25 +1611,35 @@ public final class SuperweaponService implements Listener {
                 }
                 if (airborne) {
                     if (aerialSlam) {
-                        XParticle.of("SCULK_SOUL").ifPresent(particle -> player.getWorld().spawnParticle(
-                                particle.get(), current.clone().add(0, 0.4, 0), 12, 0.45, 0.4, 0.45, 0.08));
-                        XParticle.of("SOUL_FIRE_FLAME").ifPresent(particle -> player.getWorld().spawnParticle(
-                                particle.get(), current.clone().add(0, 0.2, 0), 6, 0.3, 0.35, 0.3, 0.02));
-                        XParticle.of("SMOKE").ifPresent(particle -> player.getWorld().spawnParticle(
-                                particle.get(), current.clone().add(0, 0.5, 0), 9, 0.35, 0.4, 0.35, 0.06));
+                        if (beamSoulParticle != null) {
+                            player.getWorld().spawnParticle(beamSoulParticle.get(), current.clone().add(0, 0.4, 0),
+                                    12, 0.45, 0.4, 0.45, 0.08);
+                        }
+                        if (beamSoulFireParticle != null) {
+                            player.getWorld().spawnParticle(beamSoulFireParticle.get(), current.clone().add(0, 0.2, 0),
+                                    6, 0.3, 0.35, 0.3, 0.02);
+                        }
+                        if (slamSmokeParticle != null) {
+                            player.getWorld().spawnParticle(slamSmokeParticle.get(), current.clone().add(0, 0.5, 0),
+                                    9, 0.35, 0.4, 0.35, 0.06);
+                        }
                     } else {
-                        XParticle.of("CLOUD").ifPresent(particle -> player.getWorld().spawnParticle(
-                                particle.get(), current.clone().add(0, 0.5, 0), 12, 0.25, 0.25, 0.25, 0.04));
-                        XParticle.of("CRIT").ifPresent(particle -> player.getWorld().spawnParticle(
-                                particle.get(), current.clone().add(0, 0.4, 0), 8, 0.18, 0.18, 0.18, 0.1));
-                        XParticle.of("SOUL_FIRE_FLAME").ifPresent(particle -> {
+                        if (slamCloudParticle != null) {
+                            player.getWorld().spawnParticle(slamCloudParticle.get(), current.clone().add(0, 0.5, 0),
+                                    12, 0.25, 0.25, 0.25, 0.04);
+                        }
+                        if (slamCritParticle != null) {
+                            player.getWorld().spawnParticle(slamCritParticle.get(), current.clone().add(0, 0.4, 0),
+                                    8, 0.18, 0.18, 0.18, 0.1);
+                        }
+                        if (beamSoulFireParticle != null) {
                             for (int point = 0; point < 4; point++) {
                                 double angle = ticks * 0.38 + Math.PI * 2 * point / 4;
                                 Location orbit = current.clone().add(Math.cos(angle) * 0.65, 0.25,
                                         Math.sin(angle) * 0.65);
-                                player.getWorld().spawnParticle(particle.get(), orbit, 1, 0, 0, 0, 0);
+                                player.getWorld().spawnParticle(beamSoulFireParticle.get(), orbit, 1, 0, 0, 0, 0);
                             }
-                        });
+                        }
                     }
                 }
                 if (player.isOnGround() && airborne) {

@@ -4,6 +4,7 @@ import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.entity.EntityType;
 import org.bukkit.plugin.java.JavaPlugin;
 
+import java.util.List;
 import java.util.Locale;
 
 public final class SoulsConfig {
@@ -279,6 +280,14 @@ public final class SoulsConfig {
 
     public int shrineBuffAmplifier() {
         return Math.max(0, plugin.getConfig().getInt("shrine.reward.buff.amplifier", 1));
+    }
+
+    public List<String> shrineAdditionalBuffTypes() {
+        return plugin.getConfig().getStringList("shrine.reward.buff.additional-effects");
+    }
+
+    public int shrineAdditionalBuffAmplifier() {
+        return Math.max(0, plugin.getConfig().getInt("shrine.reward.buff.additional-amplifier", 0));
     }
 
     public String shrineSound() {

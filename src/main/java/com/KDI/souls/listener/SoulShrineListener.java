@@ -20,6 +20,8 @@ import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.NamespacedKey;
 import org.bukkit.persistence.PersistentDataType;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -196,15 +198,27 @@ public final class SoulShrineListener implements Listener {
     }
 
     private boolean rewardBuff(Player player) {
-        boolean applied = XPotion.matchXPotion(config.shrineBuffType())
-                .map(potion -> player.addPotionEffect(potion.buildPotionEffect(
-                        config.shrineBuffDurationSeconds() * 20, config.shrineBuffAmplifier())))
-                .orElse(false);
-        if (!applied) {
+        List<String> rewardTypes = new ArrayList<>();
+        rewardTypes.add(config.shrineBuffType());
+        rewardTypes.addAll(config.shrineAdditionalBuffTypes());
+        List<String> validTypes = new ArrayList<>();
+        int durationTicks = config.shrineBuffDurationSeconds() * 20;
+        for (int index = 0; index < rewardTypes.size(); index++) {
+            String type = rewardTypes.get(index);
+            if (type == null || type.isBlank()) {
+                continue;
+            }
+            int amplifier = index == 0 ? config.shrineBuffAmplifier() : config.shrineAdditionalBuffAmplifier();
+            XPotion.matchXPotion(type.trim()).ifPresent(potion -> {
+                player.addPotionEffect(potion.buildPotionEffect(durationTicks, amplifier));
+                validTypes.add(type.trim());
+            });
+        }
+        if (validTypes.isEmpty()) {
             messages.send(player, "shrine-unavailable");
             return false;
         }
-        messages.send(player, "shrine-buff", Map.of("effect", config.shrineBuffType(),
+        messages.send(player, "shrine-buff", Map.of("effect", String.join(", ", validTypes),
                 "duration", config.shrineBuffDurationSeconds()));
         return true;
     }

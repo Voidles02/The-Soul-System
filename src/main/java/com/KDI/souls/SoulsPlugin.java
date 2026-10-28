@@ -47,6 +47,7 @@ public final class SoulsPlugin extends JavaPlugin {
     private SoulService soulService;
     private FragmentService fragmentService;
     private SoulRecipeService recipeService;
+    private SuperweaponService superweaponService;
 
     @Override
     public void onEnable() {
@@ -123,10 +124,10 @@ public final class SoulsPlugin extends JavaPlugin {
             });
         }, 1200L, 1200L);
 
-        SuperweaponService superweapons = new SuperweaponService(this, altar, messageService);
-        getServer().getPluginManager().registerEvents(superweapons, this);
+        superweaponService = new SuperweaponService(this, altar, messageService);
+        getServer().getPluginManager().registerEvents(superweaponService, this);
         SoulsCommand command = new SoulsCommand(this, soulService, fragmentService, databaseManager,
-                soulsConfig, messageService, new SoulStatsGui(this, soulService, fragmentService, soulsConfig, databaseManager), superweapons);
+                soulsConfig, messageService, new SoulStatsGui(this, soulService, fragmentService, soulsConfig, databaseManager), superweaponService);
         getCommand("souls").setExecutor(command);
         getCommand("souls").setTabCompleter(command);
         getCommand("guide").setExecutor(new GuideCommand(guideService, messageService));
@@ -191,11 +192,13 @@ public final class SoulsPlugin extends JavaPlugin {
 
                 int nextRetry = retries + 1;
                 resourcePackRetries.put(playerId, nextRetry);
+                UUID failedRequestId = event.getID();
                 getLogger().warning("Resource pack failed for " + player.getName() + " ("
                         + status + "); retrying in 2 seconds (" + nextRetry + "/"
                         + MAX_RESOURCE_PACK_RETRIES + ").");
                 getServer().getScheduler().runTaskLater(SoulsPlugin.this, () -> {
-                    if (player.isOnline() && resourcePackRetries.getOrDefault(playerId, 0) == nextRetry) {
+                    if (player.isOnline() && failedRequestId.equals(resourcePackRequests.get(playerId))
+                            && resourcePackRetries.getOrDefault(playerId, 0) == nextRetry) {
                         sendRequiredResourcePack(player);
                     }
                 }, 40L);
@@ -303,6 +306,9 @@ public final class SoulsPlugin extends JavaPlugin {
         } catch (Exception exception) {
             getLogger().severe("Could not persist soul balances during shutdown: " + exception.getMessage());
         } finally {
+            if (superweaponService != null) {
+                superweaponService.shutdownArtifactPersistence();
+            }
             if (resourcePackHost != null) {
                 resourcePackHost.stop();
                 resourcePackHost = null;

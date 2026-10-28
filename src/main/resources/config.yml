@@ -186,8 +186,12 @@ shrine:
     broadcast: true
     buff:
       type: SPEED
-      duration-seconds: 300
+      duration-seconds: 360
       amplifier: 1
+      additional-effects:
+        - HASTE
+        - JUMP_BOOST
+      additional-amplifier: 0
   feedback:
     sound: BLOCK_BEACON_ACTIVATE
     particle: SOUL_FIRE_FLAME

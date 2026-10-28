@@ -15,6 +15,7 @@ import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
+import org.bukkit.plugin.IllegalPluginAccessException;
 import org.bukkit.inventory.EquipmentSlot;
 import org.bukkit.inventory.ItemStack;
 
@@ -43,8 +44,19 @@ public final class SoulListener implements Listener {
     public void onJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         souls.rememberPlayer(player.getUniqueId(), player.getName());
-        souls.loadBalance(player.getUniqueId()).thenRun(() -> Bukkit.getScheduler().runTask(plugin,
-                () -> souls.applyBoost(player.getUniqueId())));
+        souls.loadBalance(player.getUniqueId()).thenRun(() -> {
+            if (!plugin.isEnabled()) {
+                return;
+            }
+            try {
+                Bukkit.getScheduler().runTask(plugin, () -> {
+                    if (plugin.isEnabled()) {
+                        souls.applyBoost(player.getUniqueId());
+                    }
+                });
+            } catch (IllegalPluginAccessException ignored) {
+            }
+        });
     }
 
     @EventHandler

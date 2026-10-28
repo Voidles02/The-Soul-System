@@ -13,6 +13,8 @@ public final class GuideListener implements Listener {
 
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
-        guide.autoOpen(event.getPlayer());
+        if (!event.getPlayer().hasPlayedBefore()) {
+            guide.autoOpen(event.getPlayer());
+        }
     }
 }

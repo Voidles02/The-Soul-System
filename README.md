@@ -2,6 +2,8 @@
 
 ### A complete soul-powered progression system for Paper
 
+**Current release: 3.1.0**
+
 Earn Souls through combat. Collect shimmering fragments. Build an altar, make your gear stronger, and risk your reserve when you fall. Souls brings progression, collectible currency, custom structures, artifacts, and a polished resource pack together in one plugin.
 
 > **For players:** Start with `/guide` or `/souls`.
@@ -24,7 +26,7 @@ Earn Souls through combat. Collect shimmering fragments. Build an altar, make yo
 
 ## 📋 Requirements
 
-- Paper server; the project targets **Paper API 1.20.4** and **Java 17**.
+- Paper server; the project targets **Paper API 1.20.4** and **Java 25**.
 - PlaceholderAPI is optional.
 - The custom resource pack requires a publicly reachable host address and an open port if you want players to download it automatically.
 
@@ -36,7 +38,7 @@ The project’s target API does not guarantee compatibility with every Paper or 
 2. Start or restart the server.
 3. Review `plugins/Souls/config.yml`; restart after changing database settings.
 4. If you want automatic resource-pack delivery, set `resource-pack.host` to the public hostname or IP clients can reach and allow inbound TCP traffic on the configured port.
-5. Grant any non-default permissions your server needs, then invite players to run `/guide`.
+5. Grant any non-default permissions your server needs. New players receive the guide once on their first join; returning players can open it with `/guide`.
 
 Souls creates its default configuration and messages file on startup. Player balances are stored in SQLite by default in `plugins/Souls/souls.db`.
 
@@ -44,7 +46,7 @@ Souls creates its default configuration and messages file on startup. Player bal
 
 ### Getting started
 
-1. Run `/guide` for the in-game tutorial; it opens automatically once by default.
+1. New players see `/guide` automatically once on their first join by default. Returning players can use `/guide` at any time.
 2. Defeat configured mobs to earn Souls and Soul Fragments.
 3. Run `/souls` to view your profile, tier, and statistics.
 4. Save Fragments for direct use or convert them through `/souls convert`.
@@ -96,7 +98,7 @@ Soul Sand     Nether Star  Gold Ingot
 Obsidian      Obsidian     Obsidian
 ```
 
-Place the crafted Shrine and right-click the marked Beacon. By default, each player can activate it once every **2 hours**. A random reward can grant **25 Souls**, **2 Fragments**, or **Speed for 5 minutes**. Rewards, buffs, feedback, broadcasts, and cooldown are configurable. An ordinary Beacon is not a Soul Shrine.
+Place the crafted Shrine and right-click the marked Beacon. By default, each player can activate it once every **2 hours**. A random reward can grant **25 Souls**, **2 Fragments**, or **Speed II, Haste I, and Jump Boost I for 6 minutes**. Reward effects, amounts, feedback, broadcasts, and cooldown are configurable. An ordinary Beacon is not a Soul Shrine.
 
 ### Artifacts
 
@@ -152,7 +154,7 @@ Edit `plugins/Souls/config.yml`. Important settings include:
 | `loss` | Enable death loss, percentage, and maximum loss. A maximum of `0` means no configured limit. |
 | `worlds` | Enable Souls, PvE, and PvP behavior per world. |
 | `altar` | Permission node, cost, upgrade ranges, caps, sound, and particle feedback. |
-| `shrine` | Permission node, cooldown, reward mode and amounts, buff, event chance, broadcast, and feedback. |
+| `shrine` | Permission node, cooldown, reward mode and amounts, primary/additional buff effects and strength, event chance, broadcast, and feedback. |
 | `superweapon` | Artifact cooldowns, information-book pages, and artifact enablement/ownership tracking. |
 | `guide.auto-open` | Whether to open the guide automatically once for a player; enabled by default. |
 | `local-data` | Enable local player-data fallback and configure its folder. Enabled by default. |
@@ -184,7 +186,7 @@ Bukkit does not expose exact per-plugin RAM or CPU consumption. Heap values are 
 
 ## 🔧 Project notes
 
-The project targets Java 17 and Paper API 1.20.4. Its Gradle build uses XSeries and SQLite/MariaDB JDBC drivers; PlaceholderAPI is a soft, optional integration. The build packages a generated resource pack with the plugin artifact.
+The project targets Java 25 and Paper API 1.20.4. Its Gradle build uses XSeries and SQLite/MariaDB JDBC drivers; PlaceholderAPI is a soft, optional integration. The resource-pack source folder is `TSS/`; the build packages its contents and generated Souls textures with the plugin artifact.
 
 Some `features` switches are present for configuration and superweapon status display, but the `shop`, `powers`, and `bounties` gameplay systems are not implemented in this project. Enabling those settings alone does not add those systems.
 

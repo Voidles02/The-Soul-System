@@ -3,10 +3,10 @@ plugins {
 }
 
 group = 'com.KDI'
-version = '3.0.3'
+version = '3.1.0'
 
 java {
-    toolchain.languageVersion = JavaLanguageVersion.of(17)
+    toolchain.languageVersion = JavaLanguageVersion.of(25)
 }
 
 dependencies {
@@ -20,7 +20,7 @@ dependencies {
 
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
-    options.release = 17
+    options.release = 25
 }
 
 processResources {
@@ -93,7 +93,7 @@ tasks.register('resourcePackZip', Zip) {
     duplicatesStrategy = DuplicatesStrategy.FAIL
     archiveFileName = 'souls-resource-pack.zip'
     destinationDirectory = layout.buildDirectory.dir('distributions')
-    from('resource-pack') {
+    from('TSS') {
         exclude 'assets/souls/textures/item/soul_shard.png'
         exclude 'assets/souls/textures/item/book_of_boc.png'
     }
