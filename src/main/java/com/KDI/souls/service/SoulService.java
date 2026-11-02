@@ -14,6 +14,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -21,6 +22,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class SoulService {
+    private static final int EVICTION_BATCH_SIZE = 2048;
     private final JavaPlugin plugin;
     private final DatabaseManager database;
     private final SoulsConfig config;
@@ -31,10 +33,13 @@ public final class SoulService {
     private final Map<UUID, CompletableFuture<Void>> lastSaves = new HashMap<>();
     private final Set<UUID> pendingDatabaseSync = new HashSet<>();
     private final Map<UUID, Long> lastAccess = new ConcurrentHashMap<>();
+    private Iterator<Map.Entry<UUID, Long>> evictionIterator;
     private final Map<UUID, CompletableFuture<Long>> loading = new ConcurrentHashMap<>();
     private final Set<UUID> unresolvedBalances = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Set<PotionEffectType>> ownedBoostEffects = new ConcurrentHashMap<>();
     private final Map<UUID, Map<PotionEffectType, PotionEffect>> preservedBoostEffects = new ConcurrentHashMap<>();
+    private long lastPersistenceWarningNanos;
+    private boolean hasPersistenceWarning;
 
     public SoulService(JavaPlugin plugin, DatabaseManager database, SoulsConfig config) {
         this.plugin = plugin;
@@ -56,36 +61,37 @@ public final class SoulService {
         CompletableFuture<Long> result = new CompletableFuture<>();
         loading.put(uuid, result);
         long maximum = config.maxBalance();
-        database.loadBalance(uuid).handleAsync((databaseValue, error) -> {
-            LocalSoulStore.StoredData local = localStore.load(uuid);
-            synchronized (this) {
-                if (error != null && local == null) {
-                    unresolvedBalances.add(uuid);
-                    plugin.getLogger().warning("Could not load souls for " + uuid
-                            + " and no local backup exists; balance changes are blocked until the database recovers.");
-                    return 0L;
-                }
-                unresolvedBalances.remove(uuid);
-                boolean useLocal = error != null || local != null && local.databasePending();
-                long value = useLocal ? local == null ? 0L : local.souls() : databaseValue;
-                long safeValue = Math.max(0, Math.min(maximum, value));
-                balances.put(uuid, safeValue);
-                String name = playerNames.getOrDefault(uuid, local == null ? "" : local.name());
-                if (!name.isBlank()) {
-                    playerNames.putIfAbsent(uuid, name);
-                }
-                if (useLocal) {
-                    pendingDatabaseSync.add(uuid);
-                } else {
-                    pendingDatabaseSync.remove(uuid);
-                }
-                lastSaves.put(uuid, localStore.saveAsync(uuid, name, safeValue, maximum, "load", useLocal));
-                if (error == null && local != null && local.databasePending()) {
-                    syncPendingBalance(uuid, name, safeValue);
-                }
-                return safeValue;
-            }
-        }).whenComplete((value, error) -> {
+        database.loadBalance(uuid).handle((databaseValue, error) ->
+                localStore.loadAsync(uuid).thenApply(local -> {
+                    synchronized (this) {
+                        if (error != null && local == null) {
+                            unresolvedBalances.add(uuid);
+                            plugin.getLogger().warning("Could not load souls for " + uuid
+                                    + " and no local backup exists; balance changes are blocked until the database recovers.");
+                            return 0L;
+                        }
+                        unresolvedBalances.remove(uuid);
+                        boolean useLocal = error != null || local != null && local.databasePending();
+                        long value = useLocal ? local == null ? 0L : local.souls() : databaseValue;
+                        long safeValue = Math.max(0, Math.min(maximum, value));
+                        balances.put(uuid, safeValue);
+                        String name = playerNames.getOrDefault(uuid, local == null ? "" : local.name());
+                        if (!name.isBlank()) {
+                            playerNames.putIfAbsent(uuid, name);
+                        }
+                        if (useLocal) {
+                            pendingDatabaseSync.add(uuid);
+                        } else {
+                            pendingDatabaseSync.remove(uuid);
+                        }
+                        lastSaves.put(uuid, localStore.saveAsync(uuid, name, safeValue, maximum, "load", useLocal));
+                        if (error == null && local != null && local.databasePending()) {
+                            syncPendingBalance(uuid, name, safeValue);
+                        }
+                        return safeValue;
+                    }
+                })
+        ).thenCompose(future -> future).whenComplete((value, error) -> {
             synchronized (this) {
                 loading.remove(uuid, result);
                 lastAccess.put(uuid, System.nanoTime());
@@ -154,7 +160,13 @@ public final class SoulService {
         if (!database.isAvailable() && !config.localDataEnabled()) {
             return;
         }
-        for (Map.Entry<UUID, Long> entry : lastAccess.entrySet()) {
+        if (evictionIterator == null) {
+            evictionIterator = lastAccess.entrySet().iterator();
+        }
+        int inspected = 0;
+        while (inspected < EVICTION_BATCH_SIZE && evictionIterator.hasNext()) {
+            Map.Entry<UUID, Long> entry = evictionIterator.next();
+            inspected++;
             UUID uuid = entry.getKey();
             CompletableFuture<Void> save = lastSaves.get(uuid);
             if (entry.getValue() > cutoff || Bukkit.getPlayer(uuid) != null || loading.containsKey(uuid)
@@ -162,11 +174,16 @@ public final class SoulService {
                     || save != null && (!save.isDone() || save.isCompletedExceptionally())) {
                 continue;
             }
+            if (!lastAccess.remove(uuid, entry.getValue())) {
+                continue;
+            }
             balances.remove(uuid);
             playerNames.remove(uuid);
             unresolvedBalances.remove(uuid);
             lastSaves.remove(uuid);
-            lastAccess.remove(uuid);
+        }
+        if (!evictionIterator.hasNext()) {
+            evictionIterator = null;
         }
     }
 
@@ -294,7 +311,7 @@ public final class SoulService {
         CompletableFuture<Void> databaseSave = database.saveBalance(uuid, balance).handle((ignored, error) -> {
             synchronized (this) {
                 if (error != null) {
-                    plugin.getLogger().warning("Could not persist souls for " + uuid
+                    warnPersistenceFailure("Could not persist souls for " + uuid
                             + "; the local copy is marked for database recovery: " + error.getMessage());
                 }
                 if (!saveVersions.remove(uuid, version)) {
@@ -314,10 +331,20 @@ public final class SoulService {
 
     private void syncPendingBalance(UUID uuid, String name, long balance) {
         persist(uuid, balance, "database-recovery").exceptionally(error -> {
-                plugin.getLogger().warning("Could not synchronize recovered local souls for " + uuid
+                warnPersistenceFailure("Could not synchronize recovered local souls for " + uuid
                         + ": " + error.getMessage());
                 return null;
         });
+    }
+
+    private synchronized void warnPersistenceFailure(String message) {
+        long now = System.nanoTime();
+        if (hasPersistenceWarning && now - lastPersistenceWarningNanos < 60_000_000_000L) {
+            return;
+        }
+        hasPersistenceWarning = true;
+        lastPersistenceWarningNanos = now;
+        plugin.getLogger().warning(message);
     }
 
     public void close() {

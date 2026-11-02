@@ -88,6 +88,8 @@ Place the crafted Altar and right-click it to open the upgrade interface. Insert
 
 Default upgrade caps include Damage **150%**, Soul Durability **300%**, Crit **45%**, LifeSteal **70%**, and Attract **70%**. Yield is available for compatible pickaxes, hoes, and books, up to Yield III. Compatibility and upgrade ranges are configurable.
 
+Maces can also roll two one-time altar upgrades. **Density Mace** triggers a 5-block circular shockwave on a hit after falling at least 8 blocks, with a 10-second cooldown; it deals 40% of the strike damage plus 0.5 bonus damage for each block beyond 8, capped at 12 bonus damage. **Breach Mace** bypasses shields on direct mace hits. To use its ground Pierce Attack, switch from the Breach Mace to another combat weapon and land a hit within 2 seconds; nearby targets in the 4.8-block forward line take 70% of that hit's damage, bypassing shields.
+
 ### Soul Shrine
 
 Craft the marked Shrine in a crafting table:
@@ -173,6 +175,8 @@ Run `/souls-performance` to see:
 - **Database state:** whether the plugin database is available.
 - **Server-wide metrics:** TPS, shared JVM heap usage, and online-player ping statistics.
 
+Local backup reads and writes run asynchronously, and offline balance-cache cleanup is processed in bounded batches to limit main-thread work during periodic maintenance.
+
 Bukkit does not expose exact per-plugin RAM or CPU consumption. Heap values are for the entire server JVM and must not be interpreted as Souls-only memory usage. Compare measurements under similar server conditions when evaluating changes.
 
 ## 🧰 Troubleshooting
@@ -183,6 +187,13 @@ Bukkit does not expose exact per-plugin RAM or CPU consumption. Heap values are 
 - **The Altar or Shrine does not activate:** Use the marked item crafted by Souls, check that its feature is enabled, and verify the player has the configured permission.
 - **A leaderboard or balance cannot load:** Check the server log and database settings; local fallback is enabled by default, but database-backed features can be unavailable if the database cannot initialize.
 - **Changed messages are not visible:** Review `messages.yml` and use `/souls reload` as an administrator.
+
+## ✅ Routine maintenance
+
+- Back up the entire `plugins/Souls/` data folder before upgrading the plugin or changing database files. Do not edit the database while the server is running.
+- Use `/souls reload` after changing messages or settings that support live reload. Restart the server after changing database settings.
+- After configuring the resource-pack host, run `/souls textures` to check the bundled files and resend the pack to online players.
+- To compare performance, capture `/souls-performance` reports under similar player counts and server load. Heap and TPS values are server-wide, not plugin-only measurements.
 
 ## 🔧 Project notes
 

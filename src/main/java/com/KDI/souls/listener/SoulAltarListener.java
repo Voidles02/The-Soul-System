@@ -2,6 +2,7 @@ package com.KDI.souls.listener;
 
 import com.cryptomorin.xseries.particles.XParticle;
 import com.cryptomorin.xseries.XSound;
+import com.cryptomorin.xseries.XPotion;
 import com.KDI.souls.config.SoulsConfig;
 import com.KDI.souls.gui.SoulAltarHolder;
 import com.KDI.souls.message.MessageService;
@@ -27,6 +28,7 @@ import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerItemDamageEvent;
+import org.bukkit.event.player.PlayerItemHeldEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.attribute.AttributeModifier;
 import org.bukkit.inventory.Inventory;
@@ -35,6 +37,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.potion.PotionEffectType;
 import org.bukkit.util.Vector;
 
 import java.util.ArrayList;
@@ -63,11 +66,20 @@ public final class SoulAltarListener implements Listener {
     private final org.bukkit.NamespacedKey projectileLifestealKey;
     private final org.bukkit.NamespacedKey projectileAttractKey;
     private final org.bukkit.NamespacedKey projectileWeaponKey;
+    private final org.bukkit.NamespacedKey densityKey;
+    private final org.bukkit.NamespacedKey breachKey;
+    private final org.bukkit.NamespacedKey densityCooldownKey;
+    private final org.bukkit.NamespacedKey breachSwapUntilKey;
     private final UUID legacySpeedModifierUuid;
     private final UUID damageModifierUuid;
     private final UUID vanillaDamageModifierUuid;
     private final Set<UUID> processing = ConcurrentHashMap.newKeySet();
     private final Set<UUID> abilityAttackers = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> shieldBypassAttackers = ConcurrentHashMap.newKeySet();
+    private final XParticle densityRingParticle;
+    private final XParticle densityAccentParticle;
+    private final XParticle breachLineParticle;
+    private final PotionEffectType blindnessEffectType;
 
     public SoulAltarListener(JavaPlugin plugin, SoulService souls, SoulsConfig config,
                              MessageService messages, SoulStructureService structures) {
@@ -88,6 +100,15 @@ public final class SoulAltarListener implements Listener {
         this.projectileLifestealKey = new org.bukkit.NamespacedKey(plugin, "soul_projectile_lifesteal");
         this.projectileAttractKey = new org.bukkit.NamespacedKey(plugin, "soul_projectile_attract");
         this.projectileWeaponKey = new org.bukkit.NamespacedKey(plugin, "soul_projectile_weapon");
+        this.densityKey = new org.bukkit.NamespacedKey(plugin, "soul_mace_density");
+        this.breachKey = new org.bukkit.NamespacedKey(plugin, "soul_mace_breach");
+        this.densityCooldownKey = new org.bukkit.NamespacedKey(plugin, "soul_mace_density_cooldown");
+        this.breachSwapUntilKey = new org.bukkit.NamespacedKey(plugin, "soul_mace_breach_swap_until");
+        this.densityRingParticle = XParticle.of("SOUL_FIRE_FLAME").orElse(null);
+        this.densityAccentParticle = XParticle.of("CLOUD").orElse(null);
+        this.breachLineParticle = XParticle.of("END_ROD").orElse(null);
+        this.blindnessEffectType = XPotion.matchXPotion("BLINDNESS")
+                .map(potion -> potion.buildPotionEffect(1, 0).getType()).orElse(null);
         this.legacySpeedModifierUuid = UUID.nameUUIDFromBytes((plugin.getName() + ":speed").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         this.damageModifierUuid = UUID.nameUUIDFromBytes((plugin.getName() + ":damage").getBytes(java.nio.charset.StandardCharsets.UTF_8));
         this.vanillaDamageModifierUuid = UUID.nameUUIDFromBytes((plugin.getName() + ":vanilla_damage").getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -319,6 +340,10 @@ public final class SoulAltarListener implements Listener {
         List<String> upgrades = book ? new ArrayList<>()
                 : tool ? new ArrayList<>(List.of("durability", "yield"))
                 : new ArrayList<>(List.of("damage", "durability", "crit"));
+        if (material.equals("MACE")) {
+            upgrades.add("density");
+            upgrades.add("breach");
+        }
         boolean hasLifesteal = pdc.getOrDefault(lifestealKey, PersistentDataType.DOUBLE, 0D) > 0;
         boolean hasAttract = pdc.has(attractKey, PersistentDataType.BYTE)
                 || pdc.getOrDefault(attractKey, PersistentDataType.DOUBLE, 0D) > 0;
@@ -339,6 +364,9 @@ public final class SoulAltarListener implements Listener {
         double amount;
         double maximum;
         if (upgrade.equals("yield")) {
+            amount = 1;
+            maximum = 1;
+        } else if (upgrade.equals("density") || upgrade.equals("breach")) {
             amount = 1;
             maximum = 1;
         } else if (upgrade.equals("damage")) {
@@ -505,7 +533,12 @@ public final class SoulAltarListener implements Listener {
     }
 
     private String displayUpgrade(String type) {
-        return type.equals("lifesteal") ? "LifeSteal" : type.substring(0, 1).toUpperCase() + type.substring(1);
+        return switch (type) {
+            case "lifesteal" -> "LifeSteal";
+            case "density" -> "Density Mace";
+            case "breach" -> "Breach Mace";
+            default -> type.substring(0, 1).toUpperCase() + type.substring(1);
+        };
     }
 
     public void applyMaxSoulEnchants(ItemStack item) {
@@ -566,6 +599,12 @@ public final class SoulAltarListener implements Listener {
             double value = Math.min(config.altarAttractCap(), oldValue + roll.amount());
             container.set(attractKey, PersistentDataType.DOUBLE, value);
             setLore(meta, "Attract Chance:", "&bAttract Chance: &f" + percent(value));
+        } else if (upgrade.equals("density")) {
+            container.set(densityKey, PersistentDataType.BYTE, (byte) 1);
+            setLore(meta, "Density Mace:", "&3Density Mace: &fShockwave");
+        } else if (upgrade.equals("breach")) {
+            container.set(breachKey, PersistentDataType.BYTE, (byte) 1);
+            setLore(meta, "Breach Mace:", "&5Breach Mace: &fPierce Attack");
         } else {
             double value = Math.min(config.altarCritCap(), critValue(container) + roll.amount());
             container.set(critKey, PersistentDataType.DOUBLE, value);
@@ -581,6 +620,12 @@ public final class SoulAltarListener implements Listener {
     }
 
     private double currentValue(org.bukkit.persistence.PersistentDataContainer pdc, String type) {
+        if (type.equals("density")) {
+            return pdc.has(densityKey, PersistentDataType.BYTE) ? 1 : 0;
+        }
+        if (type.equals("breach")) {
+            return pdc.has(breachKey, PersistentDataType.BYTE) ? 1 : 0;
+        }
         if (type.equals("yield")) {
             return pdc.getOrDefault(yieldKey, PersistentDataType.INTEGER, 0);
         }
@@ -600,6 +645,7 @@ public final class SoulAltarListener implements Listener {
 
     private double cap(ItemStack item, String type) {
         return switch (type) {
+            case "density", "breach" -> 1;
             case "yield" -> 3;
             case "damage" -> config.altarDamageCap();
             case "durability" -> config.altarDurabilityCap();
@@ -728,10 +774,17 @@ public final class SoulAltarListener implements Listener {
         boolean secondLifesteal = secondPdc.getOrDefault(lifestealKey, PersistentDataType.DOUBLE, 0D) > 0;
         boolean secondAttract = secondPdc.has(attractKey, PersistentDataType.BYTE)
                 || secondPdc.getOrDefault(attractKey, PersistentDataType.DOUBLE, 0D) > 0;
-        if (secondYield == 0 && secondDamage <= 0 && secondCrit <= 0 && secondDurability <= 0 && !secondLifesteal && !secondAttract) {
+        boolean secondDensity = secondPdc.has(densityKey, PersistentDataType.BYTE);
+        boolean secondBreach = secondPdc.has(breachKey, PersistentDataType.BYTE);
+        String firstType = com.cryptomorin.xseries.XMaterial.matchXMaterial(first.getType()).name();
+        if (secondYield == 0 && secondDamage <= 0 && secondCrit <= 0 && secondDurability <= 0 && !secondLifesteal
+                && !secondAttract && !secondDensity && !secondBreach) {
             return;
         }
-        String firstType = com.cryptomorin.xseries.XMaterial.matchXMaterial(first.getType()).name();
+        if (secondDensity && (!firstType.equals("MACE") || firstPdc.has(densityKey, PersistentDataType.BYTE))
+                || secondBreach && (!firstType.equals("MACE") || firstPdc.has(breachKey, PersistentDataType.BYTE))) {
+            return;
+        }
         boolean yieldTool = firstType.endsWith("_PICKAXE") || firstType.endsWith("_SHOVEL") || firstType.endsWith("_HOE")
                 || firstType.equals("BOOK") || firstType.equals("ENCHANTED_BOOK");
         boolean majorTarget = isWeapon(first) && (!yieldTool || firstType.equals("BOOK") || firstType.equals("ENCHANTED_BOOK"));
@@ -785,6 +838,14 @@ public final class SoulAltarListener implements Listener {
             resultPdc.remove(attractKey);
             resultPdc.set(attractKey, PersistentDataType.DOUBLE, value);
             setLore(meta, "Attract Chance:", "&bAttract Chance: &f" + percent(value));
+        }
+        if (secondDensity) {
+            resultPdc.set(densityKey, PersistentDataType.BYTE, (byte) 1);
+            setLore(meta, "Density Mace:", "&3Density Mace: &fShockwave");
+        }
+        if (secondBreach) {
+            resultPdc.set(breachKey, PersistentDataType.BYTE, (byte) 1);
+            setLore(meta, "Breach Mace:", "&5Breach Mace: &fPierce Attack");
         }
         result.setItemMeta(meta);
         refreshSoulAttributes(result);
@@ -873,6 +934,18 @@ public final class SoulAltarListener implements Listener {
     }
 
     @EventHandler
+    public void onBreachSwap(PlayerItemHeldEvent event) {
+        Player player = event.getPlayer();
+        ItemStack previous = player.getInventory().getItem(event.getPreviousSlot());
+        ItemStack next = player.getInventory().getItem(event.getNewSlot());
+        if (!hasMaceUpgrade(previous, breachKey) || !isCombatWeapon(next) || isMace(next)) {
+            return;
+        }
+        player.getPersistentDataContainer().set(breachSwapUntilKey, PersistentDataType.LONG,
+                System.currentTimeMillis() + 2000L);
+    }
+
+    @EventHandler
     public void onProjectileLaunch(ProjectileLaunchEvent event) {
         if (!(event.getEntity().getShooter() instanceof Player player)) {
             return;
@@ -898,9 +971,12 @@ public final class SoulAltarListener implements Listener {
         }
     }
 
-    @EventHandler
+    @EventHandler(ignoreCancelled = true)
     public void onDamage(EntityDamageByEntityEvent event) {
         if (event.getDamager() instanceof Player player && abilityAttackers.contains(player.getUniqueId())) {
+            if (shieldBypassAttackers.contains(player.getUniqueId())) {
+                bypassShield(event);
+            }
             return;
         }
         Player attacker = null;
@@ -910,6 +986,8 @@ public final class SoulAltarListener implements Listener {
         double lifesteal = 0;
         double attract = 0;
         String weaponMaterial = null;
+        boolean densityMace = false;
+        boolean breachMace = false;
         if (event.getDamager() instanceof Player player) {
             attacker = player;
             weapon = player.getInventory().getItemInMainHand();
@@ -921,6 +999,8 @@ public final class SoulAltarListener implements Listener {
                 attract = pdc.has(attractKey, PersistentDataType.BYTE) ? 1D
                         : pdc.getOrDefault(attractKey, PersistentDataType.DOUBLE, 0D);
                 weaponMaterial = com.cryptomorin.xseries.XMaterial.matchXMaterial(weapon.getType()).name();
+                densityMace = "MACE".equals(weaponMaterial) && pdc.has(densityKey, PersistentDataType.BYTE);
+                breachMace = "MACE".equals(weaponMaterial) && pdc.has(breachKey, PersistentDataType.BYTE);
             }
         } else if (event.getDamager() instanceof Projectile projectile && projectile.getShooter() instanceof Player player) {
             attacker = player;
@@ -933,6 +1013,11 @@ public final class SoulAltarListener implements Listener {
         }
         if (attacker == null) {
             return;
+        }
+        boolean breachSwap = event.getDamager() instanceof Player && attacker.isOnGround()
+                && consumeBreachSwap(attacker, weapon);
+        if (breachMace || breachSwap) {
+            bypassShield(event);
         }
         if (event.getDamager() instanceof Projectile) {
             double effectiveDamageBonus = damageBonus * 0.40;
@@ -961,11 +1046,140 @@ public final class SoulAltarListener implements Listener {
                 target.setVelocity(direction.normalize().multiply(0.7).setY(0.25));
             }
         }
+        if (event.getDamager() instanceof Player && event.getEntity() instanceof LivingEntity target) {
+            if (densityMace && attacker.getFallDistance() >= 8) {
+                triggerDensityShockwave(attacker, target, event.getDamage(), attacker.getFallDistance());
+            }
+            if (breachSwap) {
+                triggerBreachLine(attacker, target, event.getDamage());
+            }
+        }
+    }
+
+    private boolean hasMaceUpgrade(ItemStack item, org.bukkit.NamespacedKey key) {
+        return isMace(item) && item.hasItemMeta()
+                && item.getItemMeta().getPersistentDataContainer().has(key, PersistentDataType.BYTE);
+    }
+
+    private boolean isMace(ItemStack item) {
+        return item != null && !item.getType().isAir()
+                && com.cryptomorin.xseries.XMaterial.matchXMaterial(item.getType()).name().equals("MACE");
+    }
+
+    private boolean consumeBreachSwap(Player player, ItemStack weapon) {
+        var pdc = player.getPersistentDataContainer();
+        long expiresAt = pdc.getOrDefault(breachSwapUntilKey, PersistentDataType.LONG, 0L);
+        if (expiresAt <= System.currentTimeMillis()) {
+            pdc.remove(breachSwapUntilKey);
+            return false;
+        }
+        if (!isCombatWeapon(weapon) || isMace(weapon)) {
+            return false;
+        }
+        pdc.remove(breachSwapUntilKey);
+        return true;
+    }
+
+    private void bypassShield(EntityDamageByEntityEvent event) {
+        org.bukkit.event.entity.EntityDamageEvent.DamageModifier blocking =
+                org.bukkit.event.entity.EntityDamageEvent.DamageModifier.BLOCKING;
+        if (event.isApplicable(blocking)) {
+            event.setDamage(blocking, 0);
+        }
+    }
+
+    private void triggerDensityShockwave(Player attacker, LivingEntity struck, double maceDamage, float fallDistance) {
+        var pdc = attacker.getPersistentDataContainer();
+        long now = System.currentTimeMillis();
+        if (pdc.getOrDefault(densityCooldownKey, PersistentDataType.LONG, 0L) > now) {
+            return;
+        }
+        pdc.set(densityCooldownKey, PersistentDataType.LONG, now + 10000L);
+
+        double heightDamage = Math.min(12.0, Math.max(0.0, fallDistance - 8.0) * 0.5);
+        double shockwaveDamage = Math.max(0, maceDamage * 0.4 + heightDamage);
+        Location center = struck.getLocation();
+        for (Entity entity : center.getWorld().getNearbyEntities(center, 5, 2.5, 5)) {
+            if (!(entity instanceof LivingEntity target) || target.equals(attacker) || target.equals(struck)
+                    || !canAbilityDamage(attacker, target)) {
+                continue;
+            }
+            double dx = target.getLocation().getX() - center.getX();
+            double dz = target.getLocation().getZ() - center.getZ();
+            if (dx * dx + dz * dz > 25) {
+                continue;
+            }
+            target.setNoDamageTicks(0);
+            damageFromAbility(target, attacker, shockwaveDamage);
+        }
+
+        if (densityRingParticle != null || densityAccentParticle != null) {
+            for (int point = 0; point < 32; point++) {
+                double angle = Math.PI * 2 * point / 32;
+                Location ring = center.clone().add(Math.cos(angle) * 5, 0.15, Math.sin(angle) * 5);
+                if (densityRingParticle != null) {
+                    center.getWorld().spawnParticle(densityRingParticle.get(), ring, 1, 0, 0, 0, 0);
+                }
+                if (densityAccentParticle != null && point % 2 == 0) {
+                    center.getWorld().spawnParticle(densityAccentParticle.get(), ring.clone().add(0, 0.25, 0),
+                            1, 0, 0, 0, 0);
+                }
+            }
+        }
+        XSound.matchXSound("ENTITY_WARDEN_SONIC_BOOM").ifPresent(sound -> sound.play(attacker));
+    }
+
+    private void triggerBreachLine(Player attacker, LivingEntity struck, double attackDamage) {
+        Location origin = attacker.getEyeLocation();
+        Vector direction = origin.getDirection().normalize();
+        if (breachLineParticle != null) {
+            for (double distance = 0.6; distance <= 4.8; distance += 0.6) {
+                Location point = origin.clone().add(direction.clone().multiply(distance));
+                origin.getWorld().spawnParticle(breachLineParticle.get(), point, 1, 0, 0, 0, 0);
+            }
+        }
+
+        double lineDamage = Math.max(0, attackDamage * 0.7);
+        for (Entity entity : origin.getWorld().getNearbyEntities(origin, 4.8, 4.8, 4.8)) {
+            if (!(entity instanceof LivingEntity target) || target.equals(attacker) || target.equals(struck)
+                    || !canAbilityDamage(attacker, target)) {
+                continue;
+            }
+            Vector offset = target.getBoundingBox().getCenter().subtract(origin.toVector());
+            double along = offset.dot(direction);
+            if (along <= 0 || along > 4.8) {
+                continue;
+            }
+            double perpendicularSquared = offset.lengthSquared() - along * along;
+            if (perpendicularSquared > 0.75 * 0.75) {
+                continue;
+            }
+            target.setNoDamageTicks(0);
+            damagePiercingFromAbility(target, attacker, lineDamage);
+        }
+    }
+
+    private boolean canAbilityDamage(Player attacker, LivingEntity target) {
+        if (target.isDead() || !target.isValid()) {
+            return false;
+        }
+        return !(target instanceof Player player) || target.getWorld().getPVP()
+                && player.getGameMode() != org.bukkit.GameMode.SPECTATOR
+                && player.getGameMode() != org.bukkit.GameMode.CREATIVE;
+    }
+
+    private void damagePiercingFromAbility(LivingEntity target, Player attacker, double damage) {
+        UUID attackerId = attacker.getUniqueId();
+        shieldBypassAttackers.add(attackerId);
+        try {
+            damageFromAbility(target, attacker, damage);
+        } finally {
+            shieldBypassAttackers.remove(attackerId);
+        }
     }
 
     private boolean isCriticalMelee(Player player) {
-        boolean blinded = player.getActivePotionEffects().stream()
-                .anyMatch(effect -> effect.getType().getKey().getKey().equals("blindness"));
+        boolean blinded = blindnessEffectType != null && player.hasPotionEffect(blindnessEffectType);
         return player.getFallDistance() > 0 && !player.isOnGround() && !player.isClimbing()
                 && !player.isInWater() && !player.isInsideVehicle() && !player.isSprinting() && !blinded;
     }

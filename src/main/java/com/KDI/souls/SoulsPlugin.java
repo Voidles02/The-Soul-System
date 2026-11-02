@@ -33,6 +33,7 @@ import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public final class SoulsPlugin extends JavaPlugin {
     private static final int MAX_RESOURCE_PACK_RETRIES = 2;
@@ -44,6 +45,7 @@ public final class SoulsPlugin extends JavaPlugin {
     private DatabaseManager databaseManager;
     private volatile boolean databaseAvailable;
     private volatile boolean databaseInitializationComplete;
+    private final AtomicBoolean databaseRecoveryInProgress = new AtomicBoolean();
     private SoulService soulService;
     private FragmentService fragmentService;
     private SoulRecipeService recipeService;
@@ -100,7 +102,7 @@ public final class SoulsPlugin extends JavaPlugin {
         getServer().getPluginManager().registerEvents(
                 new com.KDI.souls.listener.SoulShrineListener(this, soulService, fragmentService, soulsConfig, messageService, structures), this);
         getServer().getScheduler().runTaskTimer(this,
-                () -> Bukkit.getOnlinePlayers().forEach(soulService::ensureBoost), 40L, 40L);
+                () -> Bukkit.getOnlinePlayers().forEach(soulService::ensureBoost), 100L, 100L);
         getServer().getScheduler().runTaskTimer(this, soulService::evictOfflineBalances, 1200L, 1200L);
         getServer().getScheduler().runTaskTimer(this, () -> {
             if (databaseManager.isAvailable()) {
@@ -108,16 +110,20 @@ public final class SoulsPlugin extends JavaPlugin {
                 return;
             }
             databaseAvailable = false;
-            databaseManager.retryInitialize().thenAccept(recovered -> {
-                if (!recovered || !isEnabled()) {
+            if (!databaseRecoveryInProgress.compareAndSet(false, true)) {
+                return;
+            }
+            databaseManager.retryInitialize().whenComplete((recovered, error) -> {
+                databaseRecoveryInProgress.set(false);
+                if (error != null || !Boolean.TRUE.equals(recovered) || !isEnabled()) {
                     return;
                 }
                 getServer().getScheduler().runTask(this, () -> {
                     databaseAvailable = true;
                     getLogger().info("Souls database connection recovered; synchronizing cached balances.");
-                    soulService.persistAll().exceptionally(error -> {
+                    soulService.persistAll().exceptionally(persistError -> {
                         getLogger().severe("Could not synchronize cached Souls balances after database recovery: "
-                                + error.getMessage());
+                                + persistError.getMessage());
                         return null;
                     });
                 });

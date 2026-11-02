@@ -70,6 +70,13 @@ public final class LocalSoulStore {
         }
     }
 
+    public CompletableFuture<StoredData> loadAsync(UUID uuid) {
+        if (!config.localDataEnabled()) {
+            return CompletableFuture.completedFuture(null);
+        }
+        return CompletableFuture.supplyAsync(() -> load(uuid), writer);
+    }
+
     public void save(UUID uuid, String name, long souls, long maxSouls, String reason, boolean databasePending) {
         saveAsync(uuid, name, souls, maxSouls, reason, databasePending);
     }
