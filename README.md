@@ -2,7 +2,7 @@
 
 ### A complete soul-powered progression system for Paper
 
-**Current release: 3.1.0**
+**Current release: 3.1.1**
 
 Earn Souls through combat. Collect shimmering fragments. Build an altar, make your gear stronger, and risk your reserve when you fall. Souls brings progression, collectible currency, custom structures, artifacts, and a polished resource pack together in one plugin.
 
