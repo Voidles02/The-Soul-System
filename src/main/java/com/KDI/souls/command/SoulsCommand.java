@@ -67,6 +67,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             case "top" -> top(sender);
             case "pay" -> pay(sender, args);
             case "fragments" -> fragments(sender);
+            case "claim" -> claim(sender);
             case "convert" -> convert(sender);
             case "give" -> admin(sender, args, AdminAction.GIVE);
             case "take" -> admin(sender, args, AdminAction.TAKE);
@@ -371,6 +372,29 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         messages.send(player, "fragments", Map.of("amount", fragments.count(player)));
     }
 
+    private void claim(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            messages.send(sender, "player-only");
+            return;
+        }
+        souls.loadBalance(player.getUniqueId()).thenRun(() -> plugin.getServer().getScheduler().runTask(plugin, () -> {
+            if (!player.isOnline()) {
+                return;
+            }
+            if (!souls.isBalanceReady(player.getUniqueId())) {
+                messages.send(player, "database-unavailable");
+                return;
+            }
+            FragmentService.ClaimResult result = fragments.claimAll(player);
+            if (!result.successful()) {
+                messages.send(player, "claim-failed", Map.of("remaining", result.fragmentsRemaining()));
+                return;
+            }
+            messages.send(player, "claim-success", Map.of("souls", result.souls(),
+                    "fragments", result.fragmentsUsed(), "remaining", result.fragmentsRemaining()));
+        }));
+    }
+
     private void convert(CommandSender sender) {
         if (!(sender instanceof Player player)) {
             messages.send(sender, "player-only");
@@ -548,7 +572,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "convert", "give", "take", "set", "remove", "inspect", "reload", "textures", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
+            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "claim", "convert", "give", "take", "set", "remove", "inspect", "reload", "textures", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
                     .filter(value -> !(value.equals("textures") || value.equals("sw") || value.equals("sw-cooldown") || value.equals("artifact") || value.equals("artifacts"))
                             || sender.hasPermission("souls.admin"))
                     .filter(value -> value.startsWith(args[0].toLowerCase())).toList();

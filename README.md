@@ -2,7 +2,7 @@
 
 ### A complete soul-powered progression system for Paper
 
-**Current release: 3.1.1**
+**Current release: 3.1.3**
 
 Earn Souls through combat. Collect shimmering fragments. Build an altar, make your gear stronger, and risk your reserve when you fall. Souls brings progression, collectible currency, custom structures, artifacts, and a polished resource pack together in one plugin.
 
@@ -14,7 +14,7 @@ Earn Souls through combat. Collect shimmering fragments. Build an altar, make yo
 ## ✨ What’s inside
 
 - **Combat progression:** Earn Souls for configured PvE kills and eligible PvP kills. Your balance unlocks automatic effect tiers, respects a configurable cap, and is stored by UUID.
-- **Soul Fragments:** Collect mob drops, consume a tagged Fragment for a random 1–5 Souls, or convert Fragments at the configured exchange rate.
+- **Soul Fragments:** Collect mob drops, claim tagged Fragments individually or in bulk from anywhere in your inventory, or convert them at the configured exchange rate.
 - **Soul profile and leaderboard:** View your balance, tier, combat statistics, and carried Fragments; compare balances with the top-player leaderboard.
 - **Player-to-player trading:** Transfer Souls directly with `/souls pay`.
 - **Soul Altar:** Craft a marked Altar and spend Souls on compatible equipment upgrades.
@@ -63,6 +63,7 @@ The default maximum balance is **1,000 Souls**. Every **100 Souls** adds a progr
 | `/souls top` | Show the top 10 balances. |
 | `/souls pay <player> <amount>` | Transfer Souls to a player. |
 | `/souls fragments` | Count your tagged Soul Fragments. |
+| `/souls claim` | Claim tagged Fragments from your full inventory in one bulk action. |
 | `/souls convert` | Convert Fragments into Souls using the configured rate. |
 | `/guide` or `/soul-guide` | Open the tutorial book. |
 | `/souls sw-info` | Open the superweapon information book. |
@@ -70,9 +71,13 @@ The default maximum balance is **1,000 Souls**. Every **100 Souls** adds a progr
 
 ### Soul Fragments
 
-Fragments are tagged items; an ordinary item with the same base material does not count. By default, right-clicking a Fragment in your main hand consumes one for a random **1–5 Souls**. A Fragment is not consumed if your balance is already full. `/souls convert` instead exchanges Fragments at the configured rate, **10 Fragments per Soul** by default.
+Fragments are tagged items; an ordinary item with the same base material does not count. By default, right-clicking a Fragment in your main hand consumes one for a random **1–5 Souls**. Sneak and right-click a held Fragment, or shift-right-click a Fragment stack in your own inventory, to bulk claim tagged Fragments across your full inventory, including stacks outside the hotbar. `/souls claim` does the same bulk claim on demand. Bulk claims stop at the configured balance limit: only successfully claimed Fragments are removed, and all remaining Fragments stay in your inventory. Rapid repeated shard actions are ignored while a balance check is pending, preventing duplicate queued claims. `/souls convert` instead exchanges Fragments at the configured rate, **10 Fragments per Soul** by default.
 
 The custom shard texture uses `PRISMARINE_SHARD` as its base material. Keep `fragments.item-material` set to that value if you want the bundled visual to display correctly.
+
+### Death feedback
+
+Player deaths trigger a visual-only lightning strike with Soul and electric particles. It does not damage players or destroy dropped items. The Ender Dragon growl, Warden emerge, and Warden death sounds play in sequence for players in the same world within **100 chunks** of the death location.
 
 ### Soul Altar
 

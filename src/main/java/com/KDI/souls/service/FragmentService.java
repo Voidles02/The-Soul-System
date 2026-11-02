@@ -16,6 +16,7 @@ import org.bukkit.NamespacedKey;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 public final class FragmentService {
     private final JavaPlugin plugin;
@@ -23,6 +24,7 @@ public final class FragmentService {
     private final SoulsConfig config;
     private final NamespacedKey key;
     private final XParticle claimParticle = XParticle.of("SOUL").orElse(null);
+    private final XParticle claimAccentParticle = XParticle.of("END_ROD").orElse(null);
     private final Set<UUID> playersWithClaimEffect = new HashSet<>();
 
     public FragmentService(JavaPlugin plugin, SoulService souls, SoulsConfig config) {
@@ -101,6 +103,46 @@ public final class FragmentService {
         return result;
     }
 
+    public ClaimResult claimAll(Player player) {
+        long available = count(player);
+        long capacity = souls.getRemainingCapacity(player.getUniqueId());
+        if (!config.fragmentsEnabled() || available <= 0 || capacity <= 0) {
+            return new ClaimResult(false, 0, 0, available);
+        }
+
+        byte[] rewards = new byte[(int) Math.min(available, capacity)];
+        int rewardCount = 0;
+        long requested = 0;
+        while (rewardCount < rewards.length && requested < capacity) {
+            int reward = ThreadLocalRandom.current().nextInt(1, 6);
+            int accepted = (int) Math.min(reward, capacity - requested);
+            rewards[rewardCount++] = (byte) accepted;
+            requested += accepted;
+        }
+
+        SoulService.OperationResult result = souls.addSouls(player.getUniqueId(), requested, "fragment-bulk-use");
+        if (!result.successful()) {
+            return new ClaimResult(false, 0, 0, available);
+        }
+
+        long claimedSouls = 0;
+        long consumed = 0;
+        for (int i = 0; i < rewardCount; i++) {
+            int reward = rewards[i];
+            if (claimedSouls + reward > result.amount()) {
+                break;
+            }
+            claimedSouls += reward;
+            consumed++;
+        }
+        remove(player, consumed);
+        playClaimEffect(player);
+        return new ClaimResult(true, result.amount(), consumed, count(player));
+    }
+
+    public record ClaimResult(boolean successful, long souls, long fragmentsUsed, long fragmentsRemaining) {
+    }
+
     public void playClaimEffect(Player player) {
         UUID playerId = player.getUniqueId();
         if (!player.isOnline() || !playersWithClaimEffect.add(playerId)) {
@@ -109,16 +151,26 @@ public final class FragmentService {
         if (claimParticle != null) {
             Location center = player.getLocation();
             center.add(0, 0.85, 0);
-            for (int i = 0; i < 16; i++) {
-                double angle = 2 * Math.PI * i / 16;
-                double radius = 0.7;
-                Location point = center.clone().add(Math.cos(angle) * radius, Math.sin(angle * 2) * 0.12,
-                        Math.sin(angle) * radius);
-                player.getWorld().spawnParticle(claimParticle.get(), point, 1, 0, 0, 0, 0);
+            double centerX = center.getX();
+            double centerY = center.getY();
+            double centerZ = center.getZ();
+            for (int i = 0; i < 32; i++) {
+                double angle = 2 * Math.PI * i / 32;
+                double x = centerX + Math.cos(angle) * 0.85;
+                double y = centerY + Math.sin(angle * 2) * 0.14;
+                double z = centerZ + Math.sin(angle) * 0.85;
+                player.getWorld().spawnParticle(claimParticle.get(), x, y, z, 1, 0, 0, 0, 0);
+                if (claimAccentParticle != null && i % 2 == 0) {
+                    double accentX = centerX + Math.cos(angle) * 1.1;
+                    double accentY = centerY + 0.28;
+                    double accentZ = centerZ + Math.sin(angle) * 1.1;
+                    player.getWorld().spawnParticle(claimAccentParticle.get(), accentX, accentY, accentZ,
+                            1, 0, 0, 0, 0);
+                }
             }
-            for (int i = 0; i < 4; i++) {
-                player.getWorld().spawnParticle(claimParticle.get(), center.clone().add(0, 0.12 * i, 0),
-                        1, 0, 0, 0, 0);
+            for (int i = 0; i < 8; i++) {
+                player.getWorld().spawnParticle(claimParticle.get(), centerX, centerY + 0.18 * i,
+                        centerZ, 1, 0, 0, 0, 0);
             }
         }
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> playersWithClaimEffect.remove(playerId), 20L);

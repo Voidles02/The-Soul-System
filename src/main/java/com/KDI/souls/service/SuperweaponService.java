@@ -75,6 +75,7 @@ import java.time.format.DateTimeFormatter;
 public final class SuperweaponService implements Listener {
     private static final int COOLDOWN_BAR_CELLS = 2;
     private static final int COOLDOWN_BAR_LEVELS = 8;
+    private static final double DEATH_EFFECT_RANGE = 100 * 16.0;
     private static final String[] COOLDOWN_PARTIAL_BLOCKS = {"", "▏", "▎", "▍", "▌", "▋", "▊", "▉"};
     private static final double SARCuLUM_DASH_DAMAGE = 13.5;
     private static final double SARCULUM_GROUND_SLAM_DAMAGE = 18.0;
@@ -1938,6 +1939,7 @@ public final class SuperweaponService implements Listener {
     @EventHandler
     public void onDeath(PlayerDeathEvent event) {
         Player player = event.getEntity();
+        playDeathEffect(player);
         EntityDamageEvent damage = player.getLastDamageCause();
         String cause = player.getKiller() != null ? "Killed by " + player.getKiller().getName()
                 : damage == null ? "Death" : "Death: " + damage.getCause().name().toLowerCase(Locale.ROOT).replace('_', ' ');
@@ -1953,6 +1955,48 @@ public final class SuperweaponService implements Listener {
         stopAction(player);
         stopBocActivationEffect(player);
         fallProtection.remove(player.getUniqueId());
+    }
+
+    private void playDeathEffect(Player player) {
+        Location location = player.getLocation();
+        World world = location.getWorld();
+        if (world == null) {
+            return;
+        }
+        world.strikeLightningEffect(location);
+        double deathX = location.getX();
+        double deathY = location.getY();
+        double deathZ = location.getZ();
+        XParticle.of("ELECTRIC_SPARK").ifPresent(particle -> world.spawnParticle(
+                particle.get(), deathX, deathY + 1, deathZ, 32, 0.55, 0.8, 0.55, 0.08));
+        XParticle.of("SOUL").ifPresent(particle -> {
+            for (int i = 0; i < 24; i++) {
+                double angle = Math.PI * 2 * i / 24;
+                double x = deathX + Math.cos(angle) * 1.2;
+                double z = deathZ + Math.sin(angle) * 1.2;
+                world.spawnParticle(particle.get(), x, deathY + 0.25, z, 1, 0, 0, 0, 0);
+            }
+        });
+        playDeathSound(location, "ENTITY_ENDER_DRAGON_GROWL");
+        Bukkit.getScheduler().runTaskLater(plugin,
+                () -> playDeathSound(location, "ENTITY_WARDEN_EMERGE"), 8L);
+        Bukkit.getScheduler().runTaskLater(plugin,
+                () -> playDeathSound(location, "ENTITY_WARDEN_DEATH"), 16L);
+    }
+
+    private void playDeathSound(Location location, String soundName) {
+        World world = location.getWorld();
+        if (world == null) {
+            return;
+        }
+        XSound.matchXSound(soundName).ifPresent(sound -> {
+            double rangeSquared = DEATH_EFFECT_RANGE * DEATH_EFFECT_RANGE;
+            for (Player listener : world.getPlayers()) {
+                if (listener.getLocation().distanceSquared(location) <= rangeSquared) {
+                    sound.play(listener);
+                }
+            }
+        });
     }
 
     private static final class MenuHolder implements InventoryHolder {
