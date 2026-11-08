@@ -136,13 +136,55 @@ public final class SuperweaponService implements Listener {
             return;
         }
         MenuHolder holder = new MenuHolder();
+        Inventory inventory = holder.getInventory();
+        ItemStack filler = menuItem("BLACK_STAINED_GLASS_PANE", "&r");
+        ItemStack border = menuItem("PURPLE_STAINED_GLASS_PANE", "&r");
+        if (filler != null) {
+            for (int slot = 0; slot < inventory.getSize(); slot++) {
+                inventory.setItem(slot, filler);
+            }
+        }
+        if (border != null) {
+            for (int slot = 0; slot < 9; slot++) {
+                inventory.setItem(slot, border);
+                inventory.setItem(slot + 18, border);
+            }
+            inventory.setItem(9, border);
+            inventory.setItem(17, border);
+        }
         if (artifactEnabled("boc")) {
-            holder.getInventory().setItem(11, createBook());
+            inventory.setItem(11, createBook());
+        } else {
+            inventory.setItem(11, menuItem("BARRIER", "&c&lBook of Bōc disabled",
+                    "&7Enable it in the superweapon config."));
         }
         if (artifactEnabled("sarculum")) {
-            holder.getInventory().setItem(15, createSarculum());
+            inventory.setItem(15, createSarculum());
+        } else {
+            inventory.setItem(15, menuItem("BARRIER", "&c&lSarculum disabled",
+                    "&7Enable it in the superweapon config."));
         }
-        player.openInventory(holder.getInventory());
+        inventory.setItem(13, menuItem("NETHER_STAR", "&5&lSOUL WEAPON ARSENAL",
+                "&7Click an enabled artifact to give it to yourself.",
+                "&7Book of Bōc: invocations and a sustained beam.",
+                "&7Sarculum: a steerable dash and two slam styles.",
+                "&8Artifact access is controlled by the server."));
+        player.openInventory(inventory);
+    }
+
+    private ItemStack menuItem(String materialName, String name, String... lore) {
+        ItemStack item = XMaterial.matchXMaterial(materialName).map(XMaterial::parseItem).orElse(null);
+        if (item == null) {
+            return null;
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) {
+            return item;
+        }
+        meta.setDisplayName(MessageService.color(name));
+        meta.setLore(java.util.Arrays.stream(lore).map(MessageService::color).toList());
+        item.setItemMeta(meta);
+        return item;
     }
 
     public void openInfoBook(Player player) {
@@ -150,36 +192,56 @@ public final class SuperweaponService implements Listener {
         if (book == null || !(book.getItemMeta() instanceof BookMeta meta)) {
             return;
         }
-        String title = plugin.getConfig().getString("superweapon.info-book.title", "Soul Weapons");
+        String title = plugin.getConfig().getString("superweapon.info-book.title", "The Superweapon Codex");
         meta.setTitle(MessageService.color(title.length() > 32 ? title.substring(0, 32) : title));
-        meta.setAuthor(plugin.getConfig().getString("superweapon.info-book.author", "Souls"));
-        List<String> pageTemplates = plugin.getConfig().getStringList("superweapon.info-book.pages");
-        if (pageTemplates.isEmpty()) {
-            messages.send(player, "sw-info-unavailable");
-            return;
-        }
-        Map<String, String> replacements = Map.ofEntries(
-                Map.entry("{dash-cooldown}", formatCooldown("dash", 2 * 60 * 1000L)),
-                Map.entry("{slam-cooldown}", formatCooldown("slam", 5 * 60 * 1000L)),
-                Map.entry("{mace-slam-cooldown}", formatCooldown("mace-slam", 15 * 60 * 1000L)),
-                Map.entry("{activate-cooldown}", formatCooldown("activate", 15 * 60 * 1000L)),
-                Map.entry("{beam-cooldown}", formatCooldown("beam", 10 * 60 * 1000L)),
-                Map.entry("{shop-status}", featureStatus("shop")),
-                Map.entry("{altar-status}", featureStatus("altar")),
-                Map.entry("{powers-status}", featureStatus("powers")),
-                Map.entry("{bounties-status}", featureStatus("bounties")),
-                Map.entry("{shrines-status}", featureStatus("shrines")),
-                Map.entry("{events-status}", featureStatus("random-events")));
-        List<String> pages = new java.util.ArrayList<>(pageTemplates.size());
-        for (String page : pageTemplates) {
-            for (Map.Entry<String, String> replacement : replacements.entrySet()) {
-                page = page.replace(replacement.getKey(), replacement.getValue());
-            }
-            pages.add(MessageService.color(page));
-        }
-        meta.setPages(pages);
+        meta.setAuthor(plugin.getConfig().getString("superweapon.info-book.author", "The Keepers of Souls"));
+        meta.setPages(
+                infoPage("&5&lTHE SOULBOUND ARMAMENTS", "&8A field guide to two artifacts\n\n"
+                        + "&7The Book of Bōc and the Sarculum are non-craftable weapons. Learn each ability, its range, and its cost before entering a fight."),
+                infoPage("&d&lBOOK OF BŌC", "&8Invocation and power\n\n"
+                        + "&7Right-click to invoke the book and gain:\n"
+                        + "&5Strength III &7for 8 minutes\n"
+                        + "&5Regeneration V &7for 5 minutes\n"
+                        + "&7Slowness I &7for 8 minutes\n"
+                        + "&7Hunger I &7for 5 minutes\n\n"
+                        + "&7Activation cooldown: &f" + formatCooldown("activate", 15 * 60 * 1000L)),
+                infoPage("&b&lWARDEN'S BEAM", "&8A sustained line attack\n\n"
+                        + "&7Left-click to channel the beam for 5 seconds. It reaches up to 45 blocks and can hit a target again every 10 ticks.\n\n"
+                        + "&7Each hit deals &f20 damage &7(10 hearts).\n"
+                        + "&7Beam cooldown: &f" + formatCooldown("beam", 10 * 60 * 1000L)),
+                infoPage("&3&lFOLLOWING SHOCKWAVES", "&8Three impacts after the beam\n\n"
+                        + "&7Three shockwaves expand around and track your position. Each can hit nearby targets.\n\n"
+                        + "&7Damage is &f64 &7near 2 blocks, tapering to &f24 &7at 12 blocks. Targets are afflicted with &5Slowness II &7for 3 seconds."),
+                infoPage("&5&lTHE SARCULUM", "&8A Netherite Hoe artifact\n\n"
+                        + "&7Sneak + left-click to dash. Steer by changing direction as you move. The dash travels up to 25 blocks and strikes within 4 blocks of its path for up to &f13.5 damage &7(6.75 hearts).\n\n"
+                        + "&7Dash cooldown: &f" + formatCooldown("dash", 2 * 60 * 1000L)),
+                infoPage("&6&lGROUND SLAM", "&8Launch, then strike once\n\n"
+                        + "&7Sneak + right-click while grounded to launch up to 8 blocks and deliver one impact.\n\n"
+                        + "&7Damage peaks at &f18 &7(9 hearts) near the center and falls to half at the 8-block edge.\n"
+                        + "&7Cooldown: &f" + formatCooldown("slam", 5 * 60 * 1000L)),
+                infoPage("&c&lAIRBORNE MACE SLAM", "&8Two powerful impacts\n\n"
+                        + "&7While airborne, sneak + right-click with a mace in your hotbar to launch up to 12 blocks and trigger two impacts. Keep the mace in your hotbar until the action finishes.\n\n"
+                        + "&7Each impact deals up to &f30 damage &7(15 hearts), falling to half at the 12-block edge.\n"
+                        + "&7Cooldown: &f" + formatCooldown("mace-slam", 15 * 60 * 1000L)),
+                infoPage("&e&lCOOLDOWNS & USE", "&8Know your timing\n\n"
+                        + "&7Cooldowns are individually configurable by the server. When a weapon is held during recharge, its active cooldown is shown in the compact HUD.\n\n"
+                        + "&7Book of Bōc: right-click for its invocation; left-click for the beam.\n"
+                        + "&7Sarculum: sneak + left-click to dash; sneak + right-click to slam."));
         book.setItemMeta(meta);
         player.openBook(book);
+    }
+
+    private String infoPage(String title, String body) {
+        return MessageService.color((title + "\n\n" + body)
+                .replace("&f", "&0")
+                .replace("&7", "&0")
+                .replace("&8", "&0")
+                .replace("&b", "&1")
+                .replace("&3", "&1")
+                .replace("&9", "&1")
+                .replace("&d", "&5")
+                .replace("&e", "&4")
+                .replace("&6", "&4"));
     }
 
     private String formatCooldown(String ability, long defaultMillis) {
@@ -2001,7 +2063,8 @@ public final class SuperweaponService implements Listener {
 
     private static final class MenuHolder implements InventoryHolder {
         @Getter
-        private final Inventory inventory = Bukkit.createInventory(this, 27, MessageService.color("&5Superweapons"));
+        private final Inventory inventory = Bukkit.createInventory(this, 27,
+                MessageService.color("&5&lSoul Weapon Arsenal"));
     }
 
     private static final class ArtifactOverviewHolder implements InventoryHolder {

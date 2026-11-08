@@ -6,10 +6,11 @@ api-version: '1.20'
 author: voidles02
 softdepend:
   - PlaceholderAPI
+  - LuckPerms
 commands:
   souls:
     description: View and manage Souls.
-    usage: /souls [stats|top|pay|fragments|claim|convert|give|take|set|remove <player> [amount|all]|inspect|reload|textures|sw|sw-info|sw-cooldown <player> [dash|slam|mace-slam|activate|beam|all]|sw-cooldown set <dash|slam|mace-slam|activate|beam> <duration>|artifact|artifacts]
+    usage: /souls
     aliases:
       - soul
   guide:

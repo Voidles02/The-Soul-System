@@ -14,9 +14,10 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Arrays;
+import java.util.Locale;
 
 public final class SoulStatsGui {
-    private static final String TITLE = "&8Soul Profile";
+    private static final String TITLE = "&5&lSoulbound Profile";
 
     private final JavaPlugin plugin;
     private final SoulService souls;
@@ -59,45 +60,68 @@ public final class SoulStatsGui {
 
     private Inventory createInventory(Player player, DatabaseManager.CombatStats stats) {
         SoulStatsHolder holder = new SoulStatsHolder();
-        Inventory inventory = Bukkit.createInventory(holder, 27, MessageService.color(TITLE));
+        Inventory inventory = Bukkit.createInventory(holder, 45, MessageService.color(TITLE));
         holder.setInventory(inventory);
 
         ItemStack filler = item("BLACK_STAINED_GLASS_PANE", "&r");
+        ItemStack border = item("PURPLE_STAINED_GLASS_PANE", "&r");
         if (filler != null) {
             for (int slot = 0; slot < inventory.getSize(); slot++) {
                 inventory.setItem(slot, filler);
             }
         }
+        if (border != null) {
+            for (int slot = 0; slot < 9; slot++) {
+                inventory.setItem(slot, border);
+                inventory.setItem(slot + 36, border);
+            }
+            for (int row = 1; row < 4; row++) {
+                inventory.setItem(row * 9, border);
+                inventory.setItem(row * 9 + 8, border);
+            }
+        }
 
         long balance = souls.getBalance(player.getUniqueId());
-        long max = config.maxBalance();
-        long step = config.boostSoulsPerStep();
+        long max = Math.max(0L, config.maxBalance());
+        long step = Math.max(1L, config.boostSoulsPerStep());
         long tier = balance / step;
-        long maxTier = max / Math.max(1, step);
+        long maxTier = max / step;
         long fragmentsHeld = config.fragmentsEnabled() ? fragments.count(player) : 0;
-        long nextThreshold = Math.min(max, (tier + 1) * step);
+        long tierStart = tier * step;
+        boolean maxTierReached = balance >= max || tier >= maxTier;
+        long nextThreshold = balance >= max || tierStart > Long.MAX_VALUE - step
+                ? max : Math.min(max, tierStart + step);
+        double tierProgress = maxTierReached ? 1.0 : (balance - tierStart) / (double) Math.max(1L, nextThreshold - tierStart);
+        int progressPercent = (int) Math.round(tierProgress * 100);
+        String boost = String.format(Locale.US, "%.2f", tier * config.boostAmplifierPerStep());
 
-        inventory.setItem(10, item("NETHER_STAR", "&b&lSoul Balance",
-                "&7Your current progression.",
-                "&f" + balance + " &8/ &f" + max + " Souls"));
-        inventory.setItem(12, item("BEACON", "&d&lSoul Tier",
-                "&7Boost tier: &f" + tier,
-                "&7Maximum tier: &f" + maxTier,
-                "&7Current amplifier: &f" + (tier <= 0 ? 0 : Math.max(0,
-                        (int) Math.floor(tier * config.boostAmplifierPerStep()))),
-                tier >= max / Math.max(1, step) ? "&aMaximum tier reached." : "&7Next tier: &f" + nextThreshold + " Souls"));
-        inventory.setItem(14, item("PRISMARINE_SHARD", "&3&lSoul Fragments",
+        inventory.setItem(11, item("NETHER_STAR", "&b&lSoul Reserve",
+                "&7Your current balance.",
+                "&f" + balance + " &8/ &f" + max + " Souls",
+                "&7Progress to cap: &f" + (max == 0 ? 100 : Math.min(100, balance * 100.0 / max)) + "%"));
+        inventory.setItem(13, item("BEACON", "&d&lSoul Tier",
+                "&7Current tier: &f" + tier + " &8/ &f" + maxTier,
+                "&7Current boost: &f" + boost + "×",
+                "&7Progress: &d" + progressBar(tierProgress) + " &f" + progressPercent + "%",
+                maxTierReached ? "&aMaximum tier reached." : "&7Next tier: &f" + nextThreshold + " Souls"));
+        inventory.setItem(15, item("PRISMARINE_SHARD", "&3&lSoul Fragments",
                 config.fragmentsEnabled() ? "&7Carried: &f" + fragmentsHeld : "&8Fragment conversion is disabled."));
-        inventory.setItem(16, item("BOOK", "&e&lSoul Guide",
-                "&7Use &f/guide &7for a quick tutorial.",
-                "&7Earn Souls, reach tiers, and grow stronger.",
+        inventory.setItem(29, item("DIAMOND_SWORD", "&c&lCombat Record",
                 "&7Kills: " + (stats == null ? "&cUnavailable" : "&f" + stats.kills()),
                 "&7Deaths: " + (stats == null ? "&cUnavailable" : "&f" + stats.deaths()),
-                "&7K/D: " + (stats == null ? "&cUnavailable" : "&f"
-                        + String.format(java.util.Locale.US, "%.2f", stats.ratio()))));
-        inventory.setItem(22, item("BARRIER", "&c&lClose",
+                "&7Kill/death ratio: " + (stats == null ? "&cUnavailable" : "&f"
+                        + String.format(Locale.US, "%.2f", stats.ratio()))));
+        inventory.setItem(31, item("BOOK", "&e&lSoul Guide",
+                "&7Use &f/guide &7for a quick tutorial.",
+                "&7Earn Souls, reach tiers, and grow stronger."));
+        inventory.setItem(40, item("BARRIER", "&c&lClose",
                 "&7Click to close this menu."));
         return inventory;
+    }
+
+    private String progressBar(double progress) {
+        int filled = Math.max(0, Math.min(10, (int) Math.round(progress * 10)));
+        return "■".repeat(filled) + "&8" + "■".repeat(10 - filled);
     }
 
     private ItemStack item(String materialName, String name, String... lore) {

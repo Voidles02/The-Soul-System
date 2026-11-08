@@ -2,7 +2,7 @@
 
 ### A complete soul-powered progression system for Paper
 
-**Current release: 3.1.3**
+**Current release: 3.1.4-Source**
 
 Earn Souls through combat. Collect shimmering fragments. Build an altar, make your gear stronger, and risk your reserve when you fall. Souls brings progression, collectible currency, custom structures, artifacts, and a polished resource pack together in one plugin.
 
@@ -59,7 +59,7 @@ The default maximum balance is **1,000 Souls**. Every **100 Souls** adds a progr
 | Command | What it does |
 |---|---|
 | `/souls` or `/soul` | Open your Soul profile. |
-| `/souls stats` or `/souls profile` | Open your profile and stats. |
+| `/souls profile` | Reopen your profile (or run `/souls` with no subcommand). |
 | `/souls top` | Show the top 10 balances. |
 | `/souls pay <player> <amount>` | Transfer Souls to a player. |
 | `/souls fragments` | Count your tagged Soul Fragments. |

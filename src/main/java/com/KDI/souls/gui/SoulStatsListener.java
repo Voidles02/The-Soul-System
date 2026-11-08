@@ -20,9 +20,9 @@ public final class SoulStatsListener implements Listener {
             return;
         }
         event.setCancelled(true);
-        if (event.getRawSlot() == 22) {
+        if (event.getRawSlot() == 40) {
             event.getWhoClicked().closeInventory();
-        } else if (event.getRawSlot() == 16 && event.getWhoClicked() instanceof Player player) {
+        } else if (event.getRawSlot() == 31 && event.getWhoClicked() instanceof Player player) {
             guide.open(player);
         }
     }

@@ -20,6 +20,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 public final class SoulService {
     private static final int EVICTION_BATCH_SIZE = 2048;
@@ -40,6 +41,7 @@ public final class SoulService {
     private final Map<UUID, Map<PotionEffectType, PotionEffect>> preservedBoostEffects = new ConcurrentHashMap<>();
     private long lastPersistenceWarningNanos;
     private boolean hasPersistenceWarning;
+    private long balanceLoadRetryAfterNanos;
 
     public SoulService(JavaPlugin plugin, DatabaseManager database, SoulsConfig config) {
         this.plugin = plugin;
@@ -58,6 +60,9 @@ public final class SoulService {
         if (existing != null) {
             return existing;
         }
+        if (unresolvedBalances.contains(uuid) && balanceLoadRetryAfterNanos > System.nanoTime()) {
+            return CompletableFuture.completedFuture(0L);
+        }
         CompletableFuture<Long> result = new CompletableFuture<>();
         loading.put(uuid, result);
         long maximum = config.maxBalance();
@@ -66,9 +71,16 @@ public final class SoulService {
                     synchronized (this) {
                         if (error != null && local == null) {
                             unresolvedBalances.add(uuid);
-                            plugin.getLogger().warning("Could not load souls for " + uuid
-                                    + " and no local backup exists; balance changes are blocked until the database recovers.");
+                            long now = System.nanoTime();
+                            if (balanceLoadRetryAfterNanos <= now) {
+                                balanceLoadRetryAfterNanos = now + TimeUnit.SECONDS.toNanos(5);
+                                plugin.getLogger().warning("Could not load souls for " + uuid
+                                        + " and no local backup exists; balance changes are blocked until the database recovers.");
+                            }
                             return 0L;
+                        }
+                        if (error == null) {
+                            balanceLoadRetryAfterNanos = 0L;
                         }
                         unresolvedBalances.remove(uuid);
                         boolean useLocal = error != null || local != null && local.databasePending();

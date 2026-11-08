@@ -12,6 +12,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -26,6 +27,7 @@ public final class LocalSoulStore {
     private final SoulsConfig config;
     private final File playersFolder;
     private final Map<UUID, PendingSave> pendingWrites = new LinkedHashMap<>();
+    private final Map<UUID, CompletableFuture<StoredData>> pendingLoads = new HashMap<>();
     private final ExecutorService writer = Executors.newSingleThreadExecutor(runnable -> {
         Thread thread = new Thread(runnable, "souls-local-storage");
         thread.setDaemon(true);
@@ -74,7 +76,20 @@ public final class LocalSoulStore {
         if (!config.localDataEnabled()) {
             return CompletableFuture.completedFuture(null);
         }
-        return CompletableFuture.supplyAsync(() -> load(uuid), writer);
+        synchronized (pendingWrites) {
+            CompletableFuture<StoredData> existing = pendingLoads.get(uuid);
+            if (existing != null) {
+                return existing;
+            }
+            CompletableFuture<StoredData> loading = CompletableFuture.supplyAsync(() -> load(uuid), writer);
+            pendingLoads.put(uuid, loading);
+            loading.whenComplete((data, error) -> {
+                synchronized (pendingWrites) {
+                    pendingLoads.remove(uuid, loading);
+                }
+            });
+            return loading;
+        }
     }
 
     public void save(UUID uuid, String name, long souls, long maxSouls, String reason, boolean databasePending) {

@@ -21,13 +21,16 @@ public final class GuideService {
         this.openedKey = new NamespacedKey(plugin, "soul_guide_opened");
     }
 
-    public void open(Player player) {
+    public boolean open(Player player) {
+        if (!player.isOnline()) {
+            return false;
+        }
         ItemStack book = XMaterial.matchXMaterial("WRITTEN_BOOK").map(XMaterial::parseItem).orElse(null);
         if (book == null || !(book.getItemMeta() instanceof BookMeta meta)) {
-            return;
+            return false;
         }
         long maxBalance = config.maxBalance();
-        long soulsPerTier = config.boostSoulsPerStep();
+        long soulsPerTier = Math.max(1L, config.boostSoulsPerStep());
         long maxTiers = maxBalance / soulsPerTier;
         long cooldownHours = config.shrineCooldownHours();
         meta.setTitle("The Soulbound Codex");
@@ -64,7 +67,7 @@ public final class GuideService {
                         + "&f/souls fragments &7Count Soul Shards\n"
                         + "&f/souls convert &7Convert shards\n"
                         + "&f/guide &7Open this codex\n\n"
-                        + "&7Use &f/souls stats &7for your profile menu."),
+                        + "&7Use &f/souls &7anytime to reopen your profile."),
                 page("&6&lSOUL ALTAR", "&8The first rite\n\n"
                         + "&7Craft the marked Soul Altar:\n\n"
                         + "&6Gold &fNether Star &6Gold\n"
@@ -95,22 +98,38 @@ public final class GuideService {
                         + "&dMay your next choice be wiser than your last."));
         book.setItemMeta(meta);
         player.openBook(book);
+        return true;
     }
 
     public void autoOpen(Player player) {
-        if (!config.guideAutoOpen() || player.getPersistentDataContainer().has(openedKey, PersistentDataType.BYTE)) {
+        if (!config.guideAutoOpen() || hasOpened(player)) {
             return;
         }
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> {
-            if (!player.isOnline()) {
+            if (!config.guideAutoOpen() || hasOpened(player) || !player.isOnline()) {
                 return;
             }
-            player.getPersistentDataContainer().set(openedKey, PersistentDataType.BYTE, (byte) 1);
-            open(player);
+            if (open(player)) {
+                player.getPersistentDataContainer().set(openedKey, PersistentDataType.BYTE, (byte) 1);
+            }
         }, 40L);
     }
 
+    private boolean hasOpened(Player player) {
+        return player.getPersistentDataContainer().has(openedKey, PersistentDataType.BYTE);
+    }
+
     private String page(String title, String body) {
-        return MessageService.color(title + "\n\n" + body);
+        String text = title + "\n\n" + body;
+        return MessageService.color(text
+                .replace("&f", "&0")
+                .replace("&7", "&0")
+                .replace("&8", "&0")
+                .replace("&b", "&1")
+                .replace("&3", "&1")
+                .replace("&9", "&1")
+                .replace("&d", "&5")
+                .replace("&e", "&4")
+                .replace("&6", "&4"));
     }
 }

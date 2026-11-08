@@ -19,6 +19,11 @@ import com.KDI.souls.service.SoulService;
 import com.KDI.souls.service.SuperweaponService;
 import com.KDI.souls.structure.SoulStructureService;
 import com.KDI.souls.system.PluginSystemsChecker;
+import net.luckperms.api.LuckPerms;
+import net.luckperms.api.LuckPermsProvider;
+import net.luckperms.api.model.group.Group;
+import net.luckperms.api.node.NodeType;
+import net.luckperms.api.node.types.PermissionNode;
 import org.bukkit.Bukkit;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -31,6 +36,7 @@ import org.bukkit.entity.Player;
 
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -139,6 +145,7 @@ public final class SoulsPlugin extends JavaPlugin {
         getCommand("guide").setExecutor(new GuideCommand(guideService, messageService));
         getCommand("souls-performance").setExecutor(
                 new SoulsPerformanceCommand(this, messageService));
+        configureLuckPermsPermissions();
 
         if (Bukkit.getPluginManager().isPluginEnabled("PlaceholderAPI")) {
             new SoulsPlaceholderExpansion(this, soulService, soulsConfig).register();
@@ -227,6 +234,56 @@ public final class SoulsPlugin extends JavaPlugin {
                 });
             }
         }, this);
+    }
+
+    private void configureLuckPermsPermissions() {
+        if (!Bukkit.getPluginManager().isPluginEnabled("LuckPerms")) {
+            return;
+        }
+
+        LuckPerms luckPerms;
+        try {
+            luckPerms = LuckPermsProvider.get();
+        } catch (IllegalStateException exception) {
+            getLogger().warning("LuckPerms is enabled but its API is unavailable; skipping Souls group setup.");
+            return;
+        }
+
+        List<String> playerPermissions = List.of(
+                "souls.use", "souls.pay", "souls.performance", "souls.altar", "souls.shrine");
+        List<String> staffPermissions = List.of(
+                "souls.use", "souls.pay", "souls.performance", "souls.altar", "souls.shrine", "souls.admin");
+        Map.of(
+                "default", playerPermissions,
+                "moderator", staffPermissions,
+                "admin", staffPermissions,
+                "owner", staffPermissions).forEach((groupName, permissions) ->
+                luckPerms.getGroupManager().loadGroup(groupName).thenAccept(optionalGroup -> {
+                    if (optionalGroup.isEmpty()) {
+                        return;
+                    }
+                    Group group = optionalGroup.get();
+                    boolean changed = false;
+                    for (String permission : permissions) {
+                        boolean explicitlyConfigured = group.getNodes(NodeType.PERMISSION).stream()
+                                .anyMatch(node -> node.getPermission().equalsIgnoreCase(permission));
+                        if (!explicitlyConfigured) {
+                            changed |= group.data().add(PermissionNode.builder(permission).build()).wasSuccessful();
+                        }
+                    }
+                    if (changed) {
+                        luckPerms.getGroupManager().saveGroup(group).exceptionally(error -> {
+                            getLogger().warning("Could not save Souls permissions for LuckPerms group '"
+                                    + groupName + "': " + error.getMessage());
+                            return null;
+                        });
+                    }
+                }).exceptionally(error -> {
+                    getLogger().warning("Could not check LuckPerms group '" + groupName
+                            + "' for Souls permissions: " + error.getMessage());
+                    return null;
+                }));
+        getLogger().info("LuckPerms detected; checking existing default and staff groups for Souls permissions.");
     }
 
     private void sendRequiredResourcePack(Player player) {

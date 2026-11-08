@@ -27,6 +27,9 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 public final class SoulsCommand implements CommandExecutor, TabCompleter {
+    private static final List<String> ADMIN_SUBCOMMANDS = List.of(
+            "give", "take", "set", "remove", "inspect", "reload", "textures", "sw",
+            "sw-cooldown", "artifact", "artifacts");
     private final SoulsPlugin plugin;
     private final SoulService souls;
     private final FragmentService fragments;
@@ -55,7 +58,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         }
         if (args.length == 0) {
             if (!(sender instanceof Player player)) {
-                messages.sendList(sender, "help");
+                sendHelp(sender);
                 return true;
             }
             statsGui.open(player);
@@ -63,7 +66,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         }
         String subcommand = args[0].toLowerCase();
         switch (subcommand) {
-            case "stats", "profile" -> openStats(sender);
+            case "profile" -> openStats(sender);
             case "top" -> top(sender);
             case "pay" -> pay(sender, args);
             case "fragments" -> fragments(sender);
@@ -81,9 +84,13 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             case "sw-cooldown" -> superweaponCooldown(sender, args);
             case "artifact" -> registerArtifacts(sender);
             case "artifacts" -> artifacts(sender, args);
-            default -> messages.sendList(sender, "help");
+            default -> sendHelp(sender);
         }
         return true;
+    }
+
+    private void sendHelp(CommandSender sender) {
+        messages.sendList(sender, sender.hasPermission("souls.admin") ? "help-admin" : "help");
     }
 
     private void openSuperweapons(CommandSender sender) {
@@ -571,10 +578,12 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!sender.hasPermission("souls.use") && !sender.hasPermission("souls.admin")) {
+            return List.of();
+        }
         if (args.length == 1) {
-            return Arrays.asList("stats", "profile", "top", "pay", "fragments", "claim", "convert", "give", "take", "set", "remove", "inspect", "reload", "textures", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
-                    .filter(value -> !(value.equals("textures") || value.equals("sw") || value.equals("sw-cooldown") || value.equals("artifact") || value.equals("artifacts"))
-                            || sender.hasPermission("souls.admin"))
+            return Arrays.asList("profile", "top", "pay", "fragments", "claim", "convert", "give", "take", "set", "remove", "inspect", "reload", "textures", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
+                    .filter(value -> sender.hasPermission("souls.admin") || !ADMIN_SUBCOMMANDS.contains(value))
                     .filter(value -> value.startsWith(args[0].toLowerCase())).toList();
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("sw-cooldown")
@@ -604,15 +613,20 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             return List.of("20s", "20m", "20h", "20d", "20seconds", "20minutes", "20hours", "20days").stream()
                     .filter(value -> value.startsWith(args[3].toLowerCase(Locale.ROOT))).toList();
         }
-        if (args.length == 2 && List.of("pay", "give", "take", "set", "remove", "inspect").contains(args[0].toLowerCase())) {
+        if (args.length == 2 && (args[0].equalsIgnoreCase("pay")
+                || sender.hasPermission("souls.admin")
+                && List.of("give", "take", "set", "remove", "inspect").contains(args[0].toLowerCase(Locale.ROOT)))) {
             List<String> names = new ArrayList<>();
             for (Player player : Bukkit.getOnlinePlayers()) {
                 names.add(player.getName());
             }
-            return names;
+            return names.stream().filter(name -> name.toLowerCase(Locale.ROOT)
+                    .startsWith(args[1].toLowerCase(Locale.ROOT))).toList();
         }
-        if (args.length == 3 && args[0].equalsIgnoreCase("remove")) {
-            return List.of("all");
+        if (args.length == 3 && args[0].equalsIgnoreCase("remove")
+                && sender.hasPermission("souls.admin")) {
+            return List.of("all").stream()
+                    .filter(value -> value.startsWith(args[2].toLowerCase(Locale.ROOT))).toList();
         }
         return List.of();
     }
