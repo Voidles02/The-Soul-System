@@ -118,10 +118,6 @@ public final class SoulsConfig {
         return Math.max(0, plugin.getConfig().getDouble("boost.amplifier-per-step", 0.5));
     }
 
-    public double boostMaxNerf() {
-        return Math.max(0, Math.min(1, plugin.getConfig().getDouble("boost.max-nerf", 0.80)));
-    }
-
     public boolean boostHaste() {
         return plugin.getConfig().getBoolean("boost.haste", true);
     }

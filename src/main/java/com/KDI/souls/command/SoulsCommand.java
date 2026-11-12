@@ -8,6 +8,7 @@ import com.KDI.souls.message.MessageService;
 import com.KDI.souls.gui.SoulStatsGui;
 import com.KDI.souls.service.FragmentService;
 import com.KDI.souls.service.LocalSoulStore;
+import com.KDI.souls.recipe.SoulRecipeService;
 import com.KDI.souls.service.SoulService;
 import com.KDI.souls.service.SuperweaponService;
 import org.bukkit.Bukkit;
@@ -37,9 +38,11 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
     private final SoulsConfig config;
     private final MessageService messages;
     private final SoulStatsGui statsGui;
+    private final SoulRecipeService recipes;
     private final SuperweaponService superweapons;
     public SoulsCommand(SoulsPlugin plugin, SoulService souls, FragmentService fragments, DatabaseManager database,
-                        SoulsConfig config, MessageService messages, SoulStatsGui statsGui, SuperweaponService superweapons) {
+                        SoulsConfig config, MessageService messages, SoulStatsGui statsGui, SoulRecipeService recipes,
+                        SuperweaponService superweapons) {
         this.plugin = plugin;
         this.souls = souls;
         this.fragments = fragments;
@@ -47,6 +50,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
         this.config = config;
         this.messages = messages;
         this.statsGui = statsGui;
+        this.recipes = recipes;
         this.superweapons = superweapons;
     }
 
@@ -72,6 +76,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             case "fragments" -> fragments(sender);
             case "claim" -> claim(sender);
             case "convert" -> convert(sender);
+            case "recipe", "recepie" -> recipes(sender);
             case "give" -> admin(sender, args, AdminAction.GIVE);
             case "take" -> admin(sender, args, AdminAction.TAKE);
             case "set" -> admin(sender, args, AdminAction.SET);
@@ -102,6 +107,32 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             return;
         }
         superweapons.open(player);
+    }
+
+    private void recipes(CommandSender sender) {
+        if (sender instanceof Player player) {
+            recipes.discoverRecipes(player);
+        }
+        sender.sendMessage("§8§m----------------------------------------");
+        sender.sendMessage("§6§lSoul Structures §8| §7Crafting recipes");
+        sender.sendMessage("§7Enabled recipes are also unlocked in the recipe book.");
+        sender.sendMessage("");
+        sender.sendMessage("§e§lSoul Altar §8— §7Crafts a Soul Altar");
+        sender.sendMessage("§6[G] [N] [G] §8| §fG Gold Ingot, N Nether Star");
+        sender.sendMessage("§b[D] [C] [D] §8| §fD Diamond Block, C Crying Obsidian");
+        sender.sendMessage("§8[O] [O] [O] §8| §fO Obsidian");
+        sender.sendMessage(config.featureEnabled("altar")
+                ? "§aSoul Altar recipe is enabled."
+                : "§cSoul Altar recipe is disabled in the server config.");
+        sender.sendMessage("");
+        sender.sendMessage("§d§lSoul Shrine §8— §7Crafts a Soul Shrine");
+        sender.sendMessage("§5[A] [S] [A] §8| §fA Amethyst Shard, S Soul Sand");
+        sender.sendMessage("§6[G] [N] [G] §8| §fG Gold Ingot, N Nether Star");
+        sender.sendMessage("§8[O] [O] [O] §8| §fO Obsidian");
+        sender.sendMessage(config.featureEnabled("shrines")
+                ? "§aSoul Shrine recipe is enabled."
+                : "§cSoul Shrine recipe is disabled in the server config.");
+        sender.sendMessage("§8§m----------------------------------------");
     }
 
     private void openSuperweaponInfo(CommandSender sender) {
@@ -582,7 +613,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             return List.of();
         }
         if (args.length == 1) {
-            return Arrays.asList("profile", "top", "pay", "fragments", "claim", "convert", "give", "take", "set", "remove", "inspect", "reload", "textures", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
+            return Arrays.asList("profile", "top", "pay", "fragments", "claim", "convert", "recipe", "recepie", "give", "take", "set", "remove", "inspect", "reload", "textures", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
                     .filter(value -> sender.hasPermission("souls.admin") || !ADMIN_SUBCOMMANDS.contains(value))
                     .filter(value -> value.startsWith(args[0].toLowerCase())).toList();
         }

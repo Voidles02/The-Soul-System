@@ -3,10 +3,11 @@ plugins {
 }
 
 group = 'com.KDI'
-version = '3.1.4'
+version = '3.1.5'
 
 repositories {
     mavenCentral()
+    maven { url = 'https://repo.papermc.io/repository/maven-public/' }
 }
 
 java {
@@ -14,7 +15,7 @@ java {
 }
 
 dependencies {
-    compileOnly 'io.papermc.paper:paper-api:1.20.4-R0.1-SNAPSHOT'
+    compileOnly 'io.papermc.paper:paper-api:1.21.11-R0.1-SNAPSHOT'
     compileOnly 'me.clip:placeholderapi:2.11.6'
     compileOnly 'net.luckperms:api:5.5'
 

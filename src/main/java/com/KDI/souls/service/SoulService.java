@@ -66,9 +66,17 @@ public final class SoulService {
         CompletableFuture<Long> result = new CompletableFuture<>();
         loading.put(uuid, result);
         long maximum = config.maxBalance();
-        database.loadBalance(uuid).handle((databaseValue, error) ->
-                localStore.loadAsync(uuid).thenApply(local -> {
+        database.loadBalance(uuid).handle((databaseValue, error) -> {
+            if (!plugin.isEnabled()) {
+                return CompletableFuture.<Long>failedFuture(
+                        new java.util.concurrent.CancellationException("Souls was disabled during balance loading"));
+            }
+            return localStore.loadAsync(uuid).thenApply(local -> {
                     synchronized (this) {
+                        if (!plugin.isEnabled()) {
+                            throw new java.util.concurrent.CancellationException(
+                                    "Souls was disabled during balance loading");
+                        }
                         if (error != null && local == null) {
                             unresolvedBalances.add(uuid);
                             long now = System.nanoTime();
@@ -102,8 +110,8 @@ public final class SoulService {
                         }
                         return safeValue;
                     }
-                })
-        ).thenCompose(future -> future).whenComplete((value, error) -> {
+                });
+        }).thenCompose(future -> future).whenComplete((value, error) -> {
             synchronized (this) {
                 loading.remove(uuid, result);
                 lastAccess.put(uuid, System.nanoTime());
@@ -369,19 +377,10 @@ public final class SoulService {
             return;
         }
         clearBoostEffects(player);
-        if (!config.boostEnabled()) {
+        int amplifier = boostAmplifier(uuid);
+        if (amplifier < 0) {
             return;
         }
-        long stages = getBalance(uuid) / config.boostSoulsPerStep();
-        if (stages <= 0) {
-            return;
-        }
-        double soulProgress = config.maxBalance() <= 0
-                ? 0
-                : Math.min(1, getBalance(uuid) / (double) config.maxBalance());
-        double effectMultiplier = 1 - (config.boostMaxNerf() * soulProgress);
-        int amplifier = Math.max(0, (int) Math.floor(
-                stages * config.boostAmplifierPerStep() * effectMultiplier));
         if (config.boostHaste()) {
             addBoostEffect(player, "FAST_DIGGING", amplifier);
         }
@@ -397,14 +396,47 @@ public final class SoulService {
     }
 
     public void ensureBoost(Player player) {
-        if (!config.boostEnabled() || getBalance(player.getUniqueId()) < config.boostSoulsPerStep()) {
+        UUID uuid = player.getUniqueId();
+        int amplifier = boostAmplifier(uuid);
+        if (amplifier < 0 || enabledBoostEffectCount() == 0) {
             clearBoostEffects(player);
             return;
         }
-        Set<PotionEffectType> owned = ownedBoostEffects.get(player.getUniqueId());
-        if (owned == null || owned.isEmpty() || owned.stream().anyMatch(type -> !player.hasPotionEffect(type))) {
-            applyBoost(player.getUniqueId());
+        Set<PotionEffectType> owned = ownedBoostEffects.get(uuid);
+        boolean refresh = owned == null || owned.size() != enabledBoostEffectCount();
+        if (!refresh) {
+            for (PotionEffectType type : owned) {
+                PotionEffect effect = player.getPotionEffect(type);
+                if (effect == null || effect.getAmplifier() != amplifier) {
+                    refresh = true;
+                    break;
+                }
+            }
         }
+        if (refresh) {
+            applyBoost(uuid);
+        }
+    }
+
+    private int boostAmplifier(UUID uuid) {
+        if (!config.boostEnabled()) {
+            return -1;
+        }
+        long stages = getBalance(uuid) / config.boostSoulsPerStep();
+        if (stages <= 0) {
+            return -1;
+        }
+        double amplifier = stages * config.boostAmplifierPerStep();
+        return amplifier >= Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.max(0, (int) Math.floor(amplifier));
+    }
+
+    private int enabledBoostEffectCount() {
+        int count = 0;
+        if (config.boostHaste()) count++;
+        if (config.boostStrength()) count++;
+        if (config.boostSpeed()) count++;
+        if (config.boostAbsorption()) count++;
+        return count;
     }
 
     public void clearBoostEffects(Player player) {

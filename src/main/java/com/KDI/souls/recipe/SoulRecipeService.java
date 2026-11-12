@@ -7,6 +7,7 @@ import org.bukkit.NamespacedKey;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.inventory.ShapedRecipe;
+import org.bukkit.entity.Player;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -28,19 +29,28 @@ public final class SoulRecipeService {
     }
 
     public void registerRecipes() {
-        if (altarRegistered) {
-            plugin.getServer().removeRecipe(altarKey);
-            altarRegistered = false;
-        }
-        if (shrineRegistered) {
-            plugin.getServer().removeRecipe(shrineKey);
-            shrineRegistered = false;
-        }
+        plugin.getServer().removeRecipe(altarKey);
+        altarRegistered = false;
+        plugin.getServer().removeRecipe(shrineKey);
+        shrineRegistered = false;
         if (config.featureEnabled("altar")) {
             altarRegistered = plugin.getServer().addRecipe(createAltarRecipe());
         }
         if (config.featureEnabled("shrines")) {
             shrineRegistered = plugin.getServer().addRecipe(createShrineRecipe());
+        }
+    }
+
+    public void discoverRecipes(Player player) {
+        if (altarRegistered) {
+            player.discoverRecipe(altarKey);
+        } else {
+            player.undiscoverRecipe(altarKey);
+        }
+        if (shrineRegistered) {
+            player.discoverRecipe(shrineKey);
+        } else {
+            player.undiscoverRecipe(shrineKey);
         }
     }
 

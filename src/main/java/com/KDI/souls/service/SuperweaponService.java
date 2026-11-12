@@ -114,6 +114,11 @@ public final class SuperweaponService implements Listener {
     private final XParticle slamSmokeParticle = XParticle.of("SMOKE").orElse(null);
     private final XParticle slamCloudParticle = XParticle.of("CLOUD").orElse(null);
     private final XParticle slamCritParticle = XParticle.of("CRIT").orElse(null);
+    private final XParticle dashSweepParticle = XParticle.of("SWEEP_ATTACK").orElse(null);
+    private final XParticle dashCloudParticle = XParticle.of("CLOUD").orElse(null);
+    private final XParticle dashCritParticle = XParticle.of("CRIT").orElse(null);
+    private final XParticle slamExplosionParticle = XParticle.of("EXPLOSION").orElse(null);
+    private final XParticle slamSonicParticle = XParticle.of("SONIC_BOOM").orElse(null);
 
     public SuperweaponService(JavaPlugin plugin, SoulAltarListener altar, MessageService messages) {
         this.plugin = plugin;
@@ -588,27 +593,106 @@ public final class SuperweaponService implements Listener {
         if (!artifactTrackingEnabled()) {
             return false;
         }
-        boolean changed = scanArtifactInventory(player, player.getInventory());
-        changed |= scanArtifactInventory(player, player.getEnderChest());
+        Set<UUID> seenArtifacts = new HashSet<>();
+        boolean changed = scanArtifactInventory(player, player.getInventory(), seenArtifacts);
+        changed |= scanArtifactInventory(player, player.getEnderChest(), seenArtifacts);
 
         InventoryView view = player.getOpenInventory();
         Inventory top = view.getTopInventory();
         if (top != player.getInventory() && top != player.getEnderChest() && isCustomEnderChest(view)) {
-            changed |= scanArtifactInventory(player, top);
+            changed |= scanArtifactInventory(player, top, seenArtifacts);
         }
         return changed;
     }
 
-    private boolean scanArtifactInventory(Player player, Inventory inventory) {
+    private boolean scanArtifactInventory(Player player, Inventory inventory, Set<UUID> seenArtifacts) {
         boolean changed = false;
         for (int slot = 0; slot < inventory.getSize(); slot++) {
             ItemStack item = inventory.getItem(slot);
-            if (recordArtifactOwner(player, item)) {
+            if (artifact(item) == null) {
+                continue;
+            }
+            boolean idChanged = ensureArtifactId(item);
+            UUID artifactId = artifactId(item);
+            if (artifactId == null) {
+                continue;
+            }
+            if (item.getAmount() > 1) {
+                item.setAmount(1);
+                inventory.setItem(slot, item);
+                messages.send(player, "sw-duplicate-invalidated");
+                changed = true;
+            }
+            if (!seenArtifacts.add(artifactId) || hasOnlineArtifactCopy(player, artifactId)) {
+                inventory.setItem(slot, null);
+                messages.send(player, "sw-duplicate-invalidated");
+                changed = true;
+                continue;
+            }
+            if (idChanged || recordArtifactOwner(player, item)) {
                 inventory.setItem(slot, item);
                 changed = true;
             }
         }
         return changed;
+    }
+
+    private UUID artifactId(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return null;
+        }
+        String storedId = item.getItemMeta().getPersistentDataContainer()
+                .get(artifactIdKey, PersistentDataType.STRING);
+        try {
+            return UUID.fromString(storedId);
+        } catch (IllegalArgumentException | NullPointerException exception) {
+            return null;
+        }
+    }
+
+    private boolean hasOnlineArtifactCopy(Player player, UUID artifactId) {
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            if (online.equals(player)) {
+                continue;
+            }
+            if (containsArtifactId(online.getInventory(), artifactId)
+                    || containsArtifactId(online.getEnderChest(), artifactId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean containsArtifactId(Inventory inventory, UUID artifactId) {
+        for (ItemStack item : inventory.getContents()) {
+            if (artifactId.equals(artifactId(item))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasDuplicateArtifact(Player player, ItemStack item, int ignoredSlot) {
+        UUID id = artifactId(item);
+        if (id == null) {
+            return false;
+        }
+        if (item.getAmount() > 1 || hasOnlineArtifactCopy(player, id)) {
+            return true;
+        }
+        Inventory inventory = player.getInventory();
+        for (int slot = 0; slot < inventory.getSize(); slot++) {
+            if (slot != ignoredSlot && id.equals(artifactId(inventory.getItem(slot)))) {
+                return true;
+            }
+        }
+        if (containsArtifactId(player.getEnderChest(), id)) {
+            return true;
+        }
+        InventoryView view = player.getOpenInventory();
+        Inventory top = view.getTopInventory();
+        return top != inventory && top != player.getEnderChest() && isCustomEnderChest(view)
+                && containsArtifactId(top, id);
     }
 
     private boolean isCustomEnderChest(InventoryView view) {
@@ -1088,6 +1172,12 @@ public final class SuperweaponService implements Listener {
             return;
         }
         ItemStack item = event.getItem().getItemStack();
+        if (hasDuplicateArtifact(player, item, -1)) {
+            event.setCancelled(true);
+            event.getItem().remove();
+            messages.send(player, "sw-duplicate-invalidated");
+            return;
+        }
         if (recordArtifactOwner(player, item)) {
             event.getItem().setItemStack(item);
             saveArtifactOwnerships();
@@ -1118,6 +1208,17 @@ public final class SuperweaponService implements Listener {
             return;
         }
         Player player = event.getPlayer();
+        if (event.getItem().getAmount() > 1) {
+            event.getItem().setAmount(1);
+            player.getInventory().setItemInMainHand(event.getItem());
+            messages.send(player, "sw-duplicate-invalidated");
+        }
+        if (hasDuplicateArtifact(player, event.getItem(), player.getInventory().getHeldItemSlot())) {
+            player.getInventory().setItemInMainHand(null);
+            event.setCancelled(true);
+            messages.send(player, "sw-duplicate-invalidated");
+            return;
+        }
         if (!artifactEnabled(artifact)) {
             event.setCancelled(true);
             messages.send(player, "sw-artifact-disabled");
@@ -1197,21 +1298,21 @@ public final class SuperweaponService implements Listener {
                 Location center = player.getLocation();
                 double rotation = ticks * Math.PI / 16;
                 if (beamEndRodParticle != null) {
-                    for (int point = 0; point < 6; point++) {
-                        double angle = rotation + Math.PI * 2 * point / 6;
-                        Location sparkle = center.clone().add(Math.cos(angle) * 0.9,
-                                0.2 + (point % 6) * 0.28 + Math.sin(rotation + point) * 0.08,
-                                Math.sin(angle) * 0.75);
-                        player.getWorld().spawnParticle(beamEndRodParticle.get(), sparkle, 1, 0, 0, 0, 0);
+                    for (int point = 0; point < 8; point++) {
+                        double angle = rotation + Math.PI * 2 * point / 8;
+                        player.getWorld().spawnParticle(beamEndRodParticle.get(),
+                                center.getX() + Math.cos(angle) * 0.9,
+                                center.getY() + 0.2 + point * 0.22 + Math.sin(rotation + point) * 0.08,
+                                center.getZ() + Math.sin(angle) * 0.75, 1, 0, 0, 0, 0);
                     }
                 }
                 if (beamSoulParticle != null) {
-                    for (int point = 0; point < 3; point++) {
-                        double angle = -rotation * 1.4 + Math.PI * 2 * point / 6;
-                        Location soul = center.clone().add(Math.cos(angle) * 0.5,
-                                0.55 + point * 0.2 + Math.sin(rotation + point) * 0.1,
-                                Math.sin(angle) * 0.48);
-                        player.getWorld().spawnParticle(beamSoulParticle.get(), soul, 1, 0, 0, 0, 0);
+                    for (int point = 0; point < 4; point++) {
+                        double angle = -rotation * 1.4 + Math.PI * 2 * point / 4;
+                        player.getWorld().spawnParticle(beamSoulParticle.get(),
+                                center.getX() + Math.cos(angle) * 0.5,
+                                center.getY() + 0.55 + point * 0.3 + Math.sin(rotation + point) * 0.1,
+                                center.getZ() + Math.sin(angle) * 0.48, 1, 0, 0, 0, 0);
                     }
                 }
                 ticks++;
@@ -1417,17 +1518,18 @@ public final class SuperweaponService implements Listener {
         }
         right.normalize();
         Vector up = right.clone().crossProduct(direction).normalize();
-        for (double distance = 0.5; distance <= 45; distance += 0.5) {
+        int sample = 0;
+        for (double distance = 0.5; distance <= 45; distance += 0.75, sample++) {
             double pointX = origin.getX() + direction.getX() * distance;
             double pointY = origin.getY() + direction.getY() * distance;
             double pointZ = origin.getZ() + direction.getZ() * distance;
             if (beamSoulParticle != null) {
                 world.spawnParticle(beamSoulParticle.get(), pointX, pointY, pointZ, 1, 0.04, 0.04, 0.04, 0.01);
             }
-            if (beamEndRodParticle != null && ((int) (distance * 2)) % 2 == 0) {
+            if (beamEndRodParticle != null && sample % 2 == 0) {
                 world.spawnParticle(beamEndRodParticle.get(), pointX, pointY, pointZ, 1, 0.02, 0.02, 0.02, 0);
             }
-            if (beamSoulFireParticle != null || beamEndRodParticle != null) {
+            if (sample % 2 == 0 && (beamSoulFireParticle != null || beamEndRodParticle != null)) {
                 double horizontal = Math.cos(distance * 2.4) * 0.28;
                 double vertical = Math.sin(distance * 2.4) * 0.28;
                 double spiralX = pointX + right.getX() * horizontal + up.getX() * vertical;
@@ -1439,7 +1541,7 @@ public final class SuperweaponService implements Listener {
                     world.spawnParticle(beamEndRodParticle.get(), spiralX, spiralY, spiralZ, 1);
                 }
             }
-            if (beamSonicParticle != null && Math.abs(distance / 6.0 - Math.rint(distance / 6.0)) < 0.001) {
+            if (beamSonicParticle != null && sample % 8 == 0) {
                 world.spawnParticle(beamSonicParticle.get(), pointX, pointY, pointZ, 1);
             }
         }
@@ -1603,19 +1705,24 @@ public final class SuperweaponService implements Listener {
                 Vector dashDirection = direction.normalize();
                 player.setVelocity(player.getVelocity().multiply(0.65).add(dashDirection.clone().multiply(0.8)));
                 strikeNearby(player, current, 4, SARCuLUM_DASH_DAMAGE, hit, false);
-                XParticle.of("SWEEP_ATTACK").ifPresent(particle -> player.getWorld().spawnParticle(
-                        particle.get(), current.clone().add(0, 1, 0), 6, 0.25, 0.3, 0.25, 0.01));
-                XParticle.of("CLOUD").ifPresent(particle -> player.getWorld().spawnParticle(
-                        particle.get(), current.clone().add(0, 0.8, 0), 10, 0.25, 0.2, 0.25, 0.04));
-                XParticle.of("CRIT").ifPresent(particle -> player.getWorld().spawnParticle(
-                        particle.get(), current.clone().add(0, 1, 0), 6, 0.3, 0.35, 0.3, 0.15));
-                XParticle.of("SOUL_FIRE_FLAME").ifPresent(particle -> {
-                    for (int point = 0; point < 2; point++) {
-                        Location trail = current.clone()
-                                .subtract(dashDirection.clone().multiply(point * 0.4)).add(0, 0.9, 0);
-                        player.getWorld().spawnParticle(particle.get(), trail, 2, 0.08, 0.08, 0.08, 0.01);
-                    }
-                });
+                World world = current.getWorld();
+                if (dashSweepParticle != null) {
+                    world.spawnParticle(dashSweepParticle.get(), current.getX(), current.getY() + 1.0,
+                            current.getZ(), 3, 0.18, 0.24, 0.18, 0.01);
+                }
+                if (dashCloudParticle != null) {
+                    world.spawnParticle(dashCloudParticle.get(), current.getX(), current.getY() + 0.75,
+                            current.getZ(), 5, 0.2, 0.16, 0.2, 0.035);
+                }
+                if (dashCritParticle != null && ticks % 2 == 0) {
+                    world.spawnParticle(dashCritParticle.get(), current.getX(), current.getY() + 1.0,
+                            current.getZ(), 2, 0.22, 0.25, 0.22, 0.12);
+                }
+                if (beamSoulFireParticle != null) {
+                    world.spawnParticle(beamSoulFireParticle.get(),
+                            current.getX() - dashDirection.getX() * 0.55, current.getY() + 0.85,
+                            current.getZ() - dashDirection.getZ() * 0.55, 2, 0.06, 0.08, 0.06, 0.01);
+                }
                 if (distanceTravelled >= 25 || ticks >= 80) {
                     stopAction(player);
                 }
@@ -1675,32 +1782,32 @@ public final class SuperweaponService implements Listener {
                 if (airborne) {
                     if (aerialSlam) {
                         if (beamSoulParticle != null) {
-                            player.getWorld().spawnParticle(beamSoulParticle.get(), current.clone().add(0, 0.4, 0),
-                                    12, 0.45, 0.4, 0.45, 0.08);
+                            player.getWorld().spawnParticle(beamSoulParticle.get(), current.getX(), current.getY() + 0.4,
+                                    current.getZ(), 8, 0.35, 0.35, 0.35, 0.06);
                         }
                         if (beamSoulFireParticle != null) {
-                            player.getWorld().spawnParticle(beamSoulFireParticle.get(), current.clone().add(0, 0.2, 0),
-                                    6, 0.3, 0.35, 0.3, 0.02);
+                            player.getWorld().spawnParticle(beamSoulFireParticle.get(), current.getX(), current.getY() + 0.2,
+                                    current.getZ(), 4, 0.25, 0.25, 0.25, 0.015);
                         }
                         if (slamSmokeParticle != null) {
-                            player.getWorld().spawnParticle(slamSmokeParticle.get(), current.clone().add(0, 0.5, 0),
-                                    9, 0.35, 0.4, 0.35, 0.06);
+                            player.getWorld().spawnParticle(slamSmokeParticle.get(), current.getX(), current.getY() + 0.5,
+                                    current.getZ(), 6, 0.3, 0.3, 0.3, 0.045);
                         }
                     } else {
                         if (slamCloudParticle != null) {
-                            player.getWorld().spawnParticle(slamCloudParticle.get(), current.clone().add(0, 0.5, 0),
-                                    12, 0.25, 0.25, 0.25, 0.04);
+                            player.getWorld().spawnParticle(slamCloudParticle.get(), current.getX(), current.getY() + 0.5,
+                                    current.getZ(), 8, 0.2, 0.2, 0.2, 0.035);
                         }
                         if (slamCritParticle != null) {
-                            player.getWorld().spawnParticle(slamCritParticle.get(), current.clone().add(0, 0.4, 0),
-                                    8, 0.18, 0.18, 0.18, 0.1);
+                            player.getWorld().spawnParticle(slamCritParticle.get(), current.getX(), current.getY() + 0.4,
+                                    current.getZ(), 5, 0.15, 0.15, 0.15, 0.08);
                         }
                         if (beamSoulFireParticle != null) {
                             for (int point = 0; point < 4; point++) {
                                 double angle = ticks * 0.38 + Math.PI * 2 * point / 4;
-                                Location orbit = current.clone().add(Math.cos(angle) * 0.65, 0.25,
-                                        Math.sin(angle) * 0.65);
-                                player.getWorld().spawnParticle(beamSoulFireParticle.get(), orbit, 1, 0, 0, 0, 0);
+                                player.getWorld().spawnParticle(beamSoulFireParticle.get(),
+                                        current.getX() + Math.cos(angle) * 0.65, current.getY() + 0.25,
+                                        current.getZ() + Math.sin(angle) * 0.65, 1, 0, 0, 0, 0);
                             }
                         }
                     }
@@ -1780,96 +1887,91 @@ public final class SuperweaponService implements Listener {
         if (world == null) {
             return;
         }
-        XParticle.of("EXPLOSION").ifPresent(particle -> world.spawnParticle(
-                particle.get(), center.clone().add(0, 0.8, 0), 1));
-        XParticle.of("SONIC_BOOM").ifPresent(particle -> world.spawnParticle(
-                particle.get(), center.clone().add(0, 0.8, 0), 1));
-        if (aerialSlam) {
-            XParticle.of("SCULK_SOUL").ifPresent(particle -> world.spawnParticle(
-                    particle.get(), center, 180, 3.6, 1.4, 3.6, 0.24));
-            XParticle.of("SOUL_FIRE_FLAME").ifPresent(particle -> world.spawnParticle(
-                    particle.get(), center, 120, 2.8, 1, 2.8, 0.07));
-            XParticle.of("SMOKE").ifPresent(particle -> world.spawnParticle(
-                    particle.get(), center, 140, 3.2, 1.2, 3.2, 0.16));
-        } else {
-            XParticle.of("CLOUD").ifPresent(particle -> world.spawnParticle(
-                    particle.get(), center, 70, 1.4, 0.3, 1.4, 0.14));
-            XParticle.of("CRIT").ifPresent(particle -> world.spawnParticle(
-                    particle.get(), center.clone().add(0, 0.6, 0), 45, 1.2, 0.8, 1.2, 0.2));
+        double centerX = center.getX();
+        double centerY = center.getY();
+        double centerZ = center.getZ();
+        if (slamExplosionParticle != null) {
+            world.spawnParticle(slamExplosionParticle.get(), centerX, centerY + 0.8, centerZ, 1);
         }
-        XParticle.of(aerialSlam ? "SCULK_SOUL" : "END_ROD").ifPresent(particle -> {
-            for (int level = 0; level < 7; level++) {
-                double angle = level * Math.PI / 3;
-                Location plume = center.clone().add(Math.cos(angle) * 0.18, 0.2 + level * 0.38,
-                        Math.sin(angle) * 0.18);
-                world.spawnParticle(particle.get(), plume, aerialSlam ? 3 : 2, 0.08, 0.12, 0.08, 0.02);
+        if (slamSonicParticle != null) {
+            world.spawnParticle(slamSonicParticle.get(), centerX, centerY + 0.8, centerZ, 1);
+        }
+        if (aerialSlam) {
+            if (beamSoulParticle != null) {
+                world.spawnParticle(beamSoulParticle.get(), centerX, centerY + 0.25, centerZ,
+                        72, 2.6, 0.55, 2.6, 0.12);
             }
-        });
-        XParticle soulFire = XParticle.of("SOUL_FIRE_FLAME").orElse(null);
-        XParticle endRod = XParticle.of("END_ROD").orElse(null);
-        XParticle cloud = XParticle.of("CLOUD").orElse(null);
-        XParticle sculkSoul = XParticle.of("SCULK_SOUL").orElse(null);
-        XParticle smoke = XParticle.of("SMOKE").orElse(null);
+            if (beamSoulFireParticle != null) {
+                world.spawnParticle(beamSoulFireParticle.get(), centerX, centerY + 0.12, centerZ,
+                        48, 2.0, 0.25, 2.0, 0.025);
+            }
+            if (slamSmokeParticle != null) {
+                world.spawnParticle(slamSmokeParticle.get(), centerX, centerY + 0.4, centerZ,
+                        60, 2.5, 0.55, 2.5, 0.09);
+            }
+        } else {
+            if (slamCloudParticle != null) {
+                world.spawnParticle(slamCloudParticle.get(), centerX, centerY + 0.12, centerZ,
+                        44, 1.35, 0.2, 1.35, 0.1);
+            }
+            if (slamCritParticle != null) {
+                world.spawnParticle(slamCritParticle.get(), centerX, centerY + 0.5, centerZ,
+                        28, 1.0, 0.5, 1.0, 0.14);
+            }
+        }
+        XParticle plumeParticle = aerialSlam ? beamSoulParticle : beamEndRodParticle;
+        if (plumeParticle != null) {
+            for (int level = 0; level < 6; level++) {
+                double angle = level * Math.PI / 3;
+                world.spawnParticle(plumeParticle.get(), centerX + Math.cos(angle) * 0.16,
+                        centerY + 0.2 + level * 0.34, centerZ + Math.sin(angle) * 0.16,
+                        aerialSlam ? 2 : 1, 0.06, 0.1, 0.06, 0.015);
+            }
+        }
         new BukkitRunnable() {
             private int wave;
 
             @Override
             public void run() {
-                int waveCount = aerialSlam ? 40 : 24;
+                int waveCount = aerialSlam ? 28 : 18;
                 if (wave >= waveCount || !world.isChunkLoaded(center.getBlockX() >> 4, center.getBlockZ() >> 4)) {
                     cancel();
                     return;
                 }
                 double radius = aerialSlam ? (wave + 1) * (12.0 / waveCount) : (wave + 1) * (8.0 / waveCount);
-                double innerRadius = radius * 0.72;
-                double height = wave % 2 == 0 ? 0.08 : 0.45;
-                int pointCount = aerialSlam ? 42 : 24;
+                double innerRadius = radius * (aerialSlam ? 0.78 : 0.68);
+                double height = aerialSlam ? 0.1 + Math.sin(wave * 0.35) * 0.16
+                        : 0.08 + (wave % 2) * 0.18;
+                int pointCount = aerialSlam ? 28 : 20;
                 for (int point = 0; point < pointCount; point++) {
                     double angle = Math.PI * 2 * point / pointCount + wave * 0.12;
-                    Location ringPoint = center.clone().add(Math.cos(angle) * radius, height,
-                            Math.sin(angle) * radius);
+                    double cos = Math.cos(angle);
+                    double sin = Math.sin(angle);
+                    double x = centerX + cos * radius;
+                    double z = centerZ + sin * radius;
                     if (aerialSlam) {
-                        if (sculkSoul != null) {
-                            world.spawnParticle(sculkSoul.get(), ringPoint, 1, 0, 0, 0, 0);
+                        if (beamSoulParticle != null) {
+                            world.spawnParticle(beamSoulParticle.get(), x, centerY + height, z, 1, 0, 0, 0, 0);
                         }
-                        if (soulFire != null && point % 2 == 0) {
-                            Location firePoint = center.clone().add(Math.cos(angle) * innerRadius,
-                                    0.16, Math.sin(angle) * innerRadius);
-                            world.spawnParticle(soulFire.get(), firePoint, 1, 0, 0, 0, 0);
+                        if (beamSoulFireParticle != null && point % 2 == 0) {
+                            world.spawnParticle(beamSoulFireParticle.get(), centerX + cos * innerRadius,
+                                    centerY + 0.12, centerZ + sin * innerRadius, 1, 0, 0, 0, 0);
                         }
-                        if (smoke != null && point % 4 == 0) {
-                            Location smokePoint = center.clone().add(Math.cos(angle) * Math.min(44, radius * 1.08),
-                                    0.3, Math.sin(angle) * Math.min(44, radius * 1.08));
-                            world.spawnParticle(smoke.get(), smokePoint, 1, 0, 0, 0, 0);
-                        }
-                        if (point % 14 == 0 && wave % 3 == 0) {
-                            for (int strand = 0; strand < 2; strand++) {
-                                double spiralAngle = angle + wave * 0.3 + strand * Math.PI;
-                                double spiralRadius = Math.max(0.35, radius * 0.4);
-                                for (int level = 0; level < 4; level++) {
-                                    Location spiral = center.clone().add(Math.cos(spiralAngle) * spiralRadius,
-                                            0.35 + (wave % 16) * 0.24 + level * 0.18,
-                                            Math.sin(spiralAngle) * spiralRadius);
-                                    if (sculkSoul != null) {
-                                        world.spawnParticle(sculkSoul.get(), spiral, 1, 0, 0, 0, 0);
-                                    }
-                                    if (soulFire != null) {
-                                        world.spawnParticle(soulFire.get(), spiral, 1, 0, 0, 0, 0);
-                                    }
-                                }
-                            }
+                        if (slamSmokeParticle != null && point % 7 == 0 && wave % 3 == 0) {
+                            world.spawnParticle(slamSmokeParticle.get(), x, centerY + 0.32, z,
+                                    1, 0.04, 0.08, 0.04, 0.015);
                         }
                     } else {
-                        if (soulFire != null) {
-                            world.spawnParticle(soulFire.get(), ringPoint, 1, 0, 0, 0, 0);
+                        if (beamSoulFireParticle != null) {
+                            world.spawnParticle(beamSoulFireParticle.get(), x, centerY + height, z, 1, 0, 0, 0, 0);
                         }
-                        if (endRod != null && point % 2 == 0) {
-                            world.spawnParticle(endRod.get(), ringPoint.clone().add(0, 0.2, 0), 1, 0, 0, 0, 0);
+                        if (beamEndRodParticle != null && point % 2 == 0) {
+                            world.spawnParticle(beamEndRodParticle.get(), centerX + cos * innerRadius,
+                                    centerY + height + 0.2, centerZ + sin * innerRadius, 1, 0, 0, 0, 0);
                         }
-                        if (cloud != null && point % 3 == 0) {
-                            Location innerPoint = center.clone().add(Math.cos(angle) * innerRadius, 0.18,
-                                    Math.sin(angle) * innerRadius);
-                            world.spawnParticle(cloud.get(), innerPoint, 1, 0, 0, 0, 0);
+                        if (slamCloudParticle != null && point % 3 == 0) {
+                            world.spawnParticle(slamCloudParticle.get(), centerX + cos * innerRadius,
+                                    centerY + 0.14, centerZ + sin * innerRadius, 1, 0, 0, 0, 0);
                         }
                     }
                 }

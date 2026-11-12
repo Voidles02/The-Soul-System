@@ -11,11 +11,15 @@ import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitRunnable;
 import org.bukkit.NamespacedKey;
 
 import java.util.HashSet;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 public final class FragmentService {
@@ -26,6 +30,7 @@ public final class FragmentService {
     private final XParticle claimParticle = XParticle.of("SOUL").orElse(null);
     private final XParticle claimAccentParticle = XParticle.of("END_ROD").orElse(null);
     private final Set<UUID> playersWithClaimEffect = new HashSet<>();
+    private final Set<UUID> playersWithActiveClaim = ConcurrentHashMap.newKeySet();
 
     public FragmentService(JavaPlugin plugin, SoulService souls, SoulsConfig config) {
         this.plugin = plugin;
@@ -87,57 +92,77 @@ public final class FragmentService {
         if (!config.fragmentsEnabled()) {
             return SoulService.OperationResult.failure();
         }
-        long total = count(player);
-        long rate = config.fragmentConversionRate();
-        long possible = total / rate;
-        possible = Math.min(possible, souls.getRemainingCapacity(player.getUniqueId()));
-        if (possible <= 0) {
+        UUID playerId = player.getUniqueId();
+        if (!playersWithActiveClaim.add(playerId)) {
             return SoulService.OperationResult.failure();
         }
-        SoulService.OperationResult result = souls.addSouls(player.getUniqueId(), possible, "fragment-conversion");
-        if (!result.successful()) {
+        try {
+            long rate = config.fragmentConversionRate();
+            long possible = Math.min(count(player) / rate, souls.getRemainingCapacity(playerId));
+            if (possible <= 0) {
+                return SoulService.OperationResult.failure();
+            }
+            long plannedFragments = possible * rate;
+            List<ItemStack> reserved = reserve(player, plannedFragments);
+            if (reserved == null) {
+                return SoulService.OperationResult.failure();
+            }
+            SoulService.OperationResult result = souls.addSouls(playerId, possible, "fragment-conversion");
+            if (!result.successful()) {
+                restore(player, reserved, plannedFragments);
+                return result;
+            }
+            long usedFragments = Math.min(possible, result.amount()) * rate;
+            restore(player, reserved, plannedFragments - usedFragments);
+            playClaimEffect(player);
             return result;
+        } finally {
+            playersWithActiveClaim.remove(playerId);
         }
-        remove(player, result.amount() * rate);
-        playClaimEffect(player);
-        return result;
     }
 
     public ClaimResult claimAll(Player player) {
+        UUID playerId = player.getUniqueId();
         long available = count(player);
-        long capacity = souls.getRemainingCapacity(player.getUniqueId());
-        if (!config.fragmentsEnabled() || available <= 0 || capacity <= 0) {
+        if (!config.fragmentsEnabled() || available <= 0 || !playersWithActiveClaim.add(playerId)) {
             return new ClaimResult(false, 0, 0, available);
         }
-
-        byte[] rewards = new byte[(int) Math.min(available, capacity)];
-        int rewardCount = 0;
-        long requested = 0;
-        while (rewardCount < rewards.length && requested < capacity) {
-            int reward = ThreadLocalRandom.current().nextInt(1, 6);
-            int accepted = (int) Math.min(reward, capacity - requested);
-            rewards[rewardCount++] = (byte) accepted;
-            requested += accepted;
-        }
-
-        SoulService.OperationResult result = souls.addSouls(player.getUniqueId(), requested, "fragment-bulk-use");
-        if (!result.successful()) {
-            return new ClaimResult(false, 0, 0, available);
-        }
-
-        long claimedSouls = 0;
-        long consumed = 0;
-        for (int i = 0; i < rewardCount; i++) {
-            int reward = rewards[i];
-            if (claimedSouls + reward > result.amount()) {
-                break;
+        try {
+            long capacity = souls.getRemainingCapacity(playerId);
+            if (capacity <= 0) {
+                return new ClaimResult(false, 0, 0, available);
             }
-            claimedSouls += reward;
-            consumed++;
+            byte[] rewards = new byte[(int) Math.min(available, capacity)];
+            int rewardCount = 0;
+            long requested = 0;
+            while (rewardCount < rewards.length && requested < capacity) {
+                int reward = ThreadLocalRandom.current().nextInt(1, 6);
+                int accepted = (int) Math.min(reward, capacity - requested);
+                rewards[rewardCount++] = (byte) accepted;
+                requested += accepted;
+            }
+            long plannedFragments = rewardCount;
+            List<ItemStack> reserved = reserve(player, plannedFragments);
+            if (reserved == null) {
+                return new ClaimResult(false, 0, 0, count(player));
+            }
+            SoulService.OperationResult result = souls.addSouls(playerId, requested, "fragment-bulk-use");
+            if (!result.successful()) {
+                restore(player, reserved, plannedFragments);
+                return new ClaimResult(false, 0, 0, count(player));
+            }
+            long unspentSouls = result.amount();
+            long consumed = 0;
+            for (int index = 0; index < rewardCount && unspentSouls > 0; index++) {
+                unspentSouls -= Math.min(unspentSouls, rewards[index]);
+                consumed++;
+            }
+            restore(player, reserved, plannedFragments - consumed);
+            playClaimEffect(player);
+            return new ClaimResult(true, result.amount(), consumed, count(player));
+        } finally {
+            playersWithActiveClaim.remove(playerId);
         }
-        remove(player, consumed);
-        playClaimEffect(player);
-        return new ClaimResult(true, result.amount(), consumed, count(player));
     }
 
     public record ClaimResult(boolean successful, long souls, long fragmentsUsed, long fragmentsRemaining) {
@@ -148,35 +173,49 @@ public final class FragmentService {
         if (!player.isOnline() || !playersWithClaimEffect.add(playerId)) {
             return;
         }
-        if (claimParticle != null) {
-            Location center = player.getLocation();
-            center.add(0, 0.85, 0);
-            double centerX = center.getX();
-            double centerY = center.getY();
-            double centerZ = center.getZ();
-            for (int i = 0; i < 32; i++) {
-                double angle = 2 * Math.PI * i / 32;
-                double x = centerX + Math.cos(angle) * 0.85;
-                double y = centerY + Math.sin(angle * 2) * 0.14;
-                double z = centerZ + Math.sin(angle) * 0.85;
-                player.getWorld().spawnParticle(claimParticle.get(), x, y, z, 1, 0, 0, 0, 0);
-                if (claimAccentParticle != null && i % 2 == 0) {
-                    double accentX = centerX + Math.cos(angle) * 1.1;
-                    double accentY = centerY + 0.28;
-                    double accentZ = centerZ + Math.sin(angle) * 1.1;
-                    player.getWorld().spawnParticle(claimAccentParticle.get(), accentX, accentY, accentZ,
-                            1, 0, 0, 0, 0);
+        new BukkitRunnable() {
+            private int frame;
+
+            @Override
+            public void run() {
+                if (!player.isOnline() || frame >= 6) {
+                    cancel();
+                    return;
+                }
+                if (claimParticle != null) {
+                    Location center = player.getLocation();
+                    double centerX = center.getX();
+                    double centerY = center.getY();
+                    double centerZ = center.getZ();
+                    double radius = 0.45 + frame * 0.14;
+                    double rotation = frame * 0.42;
+                    for (int point = 0; point < 16; point++) {
+                        double angle = rotation + Math.PI * 2 * point / 16;
+                        double x = centerX + Math.cos(angle) * radius;
+                        double y = centerY + 0.85 + Math.sin(angle * 2 - rotation) * 0.12;
+                        double z = centerZ + Math.sin(angle) * radius;
+                        player.getWorld().spawnParticle(claimParticle.get(), x, y, z, 1, 0, 0, 0, 0);
+                        if (claimAccentParticle != null && point % 4 == 0) {
+                            player.getWorld().spawnParticle(claimAccentParticle.get(), x, y + 0.22, z,
+                                    1, 0, 0, 0, 0);
+                        }
+                    }
+                    for (int point = 0; point < 3; point++) {
+                        player.getWorld().spawnParticle(claimParticle.get(), centerX, centerY + 0.2 + point * 0.3,
+                                centerZ, 1, 0, 0, 0, 0);
+                    }
+                }
+                frame++;
+                if (frame >= 6) {
+                    cancel();
                 }
             }
-            for (int i = 0; i < 8; i++) {
-                player.getWorld().spawnParticle(claimParticle.get(), centerX, centerY + 0.18 * i,
-                        centerZ, 1, 0, 0, 0, 0);
-            }
-        }
+        }.runTaskTimer(plugin, 0L, 1L);
         plugin.getServer().getScheduler().runTaskLater(plugin, () -> playersWithClaimEffect.remove(playerId), 20L);
     }
 
-    private void remove(Player player, long amount) {
+    private List<ItemStack> reserve(Player player, long amount) {
+        List<ItemStack> reserved = new ArrayList<>();
         long remaining = amount;
         ItemStack[] contents = player.getInventory().getContents();
         for (int slot = 0; slot < contents.length && remaining > 0; slot++) {
@@ -185,6 +224,9 @@ public final class FragmentService {
                 continue;
             }
             int remove = (int) Math.min(remaining, item.getAmount());
+            ItemStack taken = item.clone();
+            taken.setAmount(remove);
+            reserved.add(taken);
             if (remove >= item.getAmount()) {
                 player.getInventory().setItem(slot, null);
             } else {
@@ -192,6 +234,24 @@ public final class FragmentService {
                 player.getInventory().setItem(slot, item);
             }
             remaining -= remove;
+        }
+        if (remaining > 0) {
+            restore(player, reserved, amount - remaining);
+            return null;
+        }
+        return reserved;
+    }
+
+    private void restore(Player player, List<ItemStack> reserved, long amount) {
+        long remaining = amount;
+        for (int index = reserved.size() - 1; index >= 0 && remaining > 0; index--) {
+            ItemStack stack = reserved.get(index);
+            int restored = (int) Math.min(remaining, stack.getAmount());
+            ItemStack item = stack.clone();
+            item.setAmount(restored);
+            player.getInventory().addItem(item).values().forEach(leftover ->
+                    player.getWorld().dropItemNaturally(player.getLocation(), leftover));
+            remaining -= restored;
         }
     }
 }

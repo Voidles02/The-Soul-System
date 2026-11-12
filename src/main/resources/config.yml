@@ -108,7 +108,6 @@ boost:
   enabled: true
   souls-per-step: 100
   amplifier-per-step: 0.5
-  max-nerf: 0.80
   haste: true
   strength: true
   speed: true

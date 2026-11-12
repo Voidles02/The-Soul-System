@@ -60,6 +60,7 @@ sw-cooldown-duration-invalid: '&cInvalid duration. Use a positive value such as 
 sw-cooldown-set: '&aSet the {ability} cooldown to &f{duration}&a, saved it, and updated active cooldowns.'
 sw-cooldown-cleared: '&aCleared {ability} cooldown for &f{player}&a.'
 sw-artifact-disabled: '&cThat artifact is disabled in the configuration.'
+sw-duplicate-invalidated: '&cA duplicate Soul artifact copy was removed; only the tracked copy can be used.'
 sw-artifact-tracking-disabled: '&cArtifact ownership tracking is disabled in the configuration.'
 sw-artifacts-header: '&5Artifact ownership: '
 sw-artifacts-entry: '&7{artifact}&8: &f{owners}'

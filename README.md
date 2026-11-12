@@ -2,7 +2,7 @@
 
 ### A complete soul-powered progression system for Paper
 
-**Current release: 3.1.4-Source(obly)**
+**Current release: 3.1.5**
 
 Earn Souls through combat. Collect shimmering fragments. Build an altar, make your gear stronger, and risk your reserve when you fall. Souls brings progression, collectible currency, custom structures, artifacts, and a polished resource pack together in one plugin.
 
@@ -26,7 +26,7 @@ Earn Souls through combat. Collect shimmering fragments. Build an altar, make yo
 
 ## 📋 Requirements
 
-- Paper server; the project targets **Paper API 1.20.4** and **Java 25**.
+- Paper **1.21.11** server and **Java 25**.
 - PlaceholderAPI is optional.
 - The custom resource pack requires a publicly reachable host address and an open port if you want players to download it automatically.
 
@@ -202,7 +202,7 @@ Bukkit does not expose exact per-plugin RAM or CPU consumption. Heap values are 
 
 ## 🔧 Project notes
 
-The project targets Java 25 and Paper API 1.20.4. Its Gradle build uses XSeries and SQLite/MariaDB JDBC drivers; PlaceholderAPI is a soft, optional integration. The resource-pack source folder is `TSS/`; the build packages its contents and generated Souls textures with the plugin artifact.
+The project targets Java 25 and Paper 1.21.11. Its Gradle build uses XSeries and SQLite/MariaDB JDBC drivers; PlaceholderAPI and LuckPerms are optional integrations. The resource-pack source folder is `TSS/`; the build packages its contents and generated Souls textures with the plugin artifact.
 
 Some `features` switches are present for configuration and superweapon status display, but the `shop`, `powers`, and `bounties` gameplay systems are not implemented in this project. Enabling those settings alone does not add those systems.
 

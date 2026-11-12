@@ -108,10 +108,11 @@ public final class SoulListener implements Listener {
             return;
         }
         int heldSlot = player.getInventory().getHeldItemSlot();
+        ItemStack heldSnapshot = bulk ? null : player.getInventory().getItemInMainHand().clone();
         souls.loadBalance(playerId).whenComplete((balance, error) -> {
             try {
                 Bukkit.getScheduler().runTask(plugin, () -> {
-                    pendingFragmentActions.remove(playerId);
+                    try {
                     if (!player.isOnline()) {
                         return;
                     }
@@ -134,7 +135,8 @@ public final class SoulListener implements Listener {
                     }
                     int reward = ThreadLocalRandom.current().nextInt(1, 6);
                     ItemStack held = player.getInventory().getItemInMainHand();
-                    if (!fragments.isFragment(held)) {
+                    if (!fragments.isFragment(held) || held.getAmount() != heldSnapshot.getAmount()
+                            || !held.isSimilar(heldSnapshot)) {
                         return;
                     }
                     SoulService.OperationResult result = souls.addSouls(playerId, reward, "fragment-use");
@@ -145,6 +147,9 @@ public final class SoulListener implements Listener {
                     held.setAmount(held.getAmount() - 1);
                     messages.send(player, "fragment-collected", Map.of("amount", result.amount()));
                     fragments.playClaimEffect(player);
+                    } finally {
+                        pendingFragmentActions.remove(playerId);
+                    }
                 });
             } catch (IllegalPluginAccessException ignored) {
                 pendingFragmentActions.remove(playerId);

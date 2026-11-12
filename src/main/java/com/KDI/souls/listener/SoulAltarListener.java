@@ -49,6 +49,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 public final class SoulAltarListener implements Listener {
+    private static final int INPUT_SLOT = 13;
+    private static final int UPGRADE_SLOT = 15;
+    private static final int CLOSE_SLOT = 26;
     private final JavaPlugin plugin;
     private final SoulService souls;
     private final SoulsConfig config;
@@ -74,11 +77,13 @@ public final class SoulAltarListener implements Listener {
     private final UUID damageModifierUuid;
     private final UUID vanillaDamageModifierUuid;
     private final Set<UUID> processing = ConcurrentHashMap.newKeySet();
+    private final Set<UUID> activeAltarFeedback = ConcurrentHashMap.newKeySet();
     private final Set<UUID> abilityAttackers = ConcurrentHashMap.newKeySet();
     private final Set<UUID> shieldBypassAttackers = ConcurrentHashMap.newKeySet();
     private final XParticle densityRingParticle;
     private final XParticle densityAccentParticle;
     private final XParticle breachLineParticle;
+    private final XParticle altarFeedbackAccentParticle = XParticle.of("END_ROD").orElse(null);
     private final PotionEffectType blindnessEffectType;
 
     public SoulAltarListener(JavaPlugin plugin, SoulService souls, SoulsConfig config,
@@ -138,10 +143,17 @@ public final class SoulAltarListener implements Listener {
         if (!structures.isStructureBlock(event.getBlock(), "altar")) {
             return;
         }
+        event.setDropItems(false);
+        event.setExpToDrop(0);
         ItemStack item = structures.createItem("altar");
         if (item != null) {
-            event.setDropItems(false);
-            event.getBlock().getWorld().dropItemNaturally(event.getBlock().getLocation(), item);
+            org.bukkit.block.Block block = event.getBlock();
+            Location location = block.getLocation();
+            Bukkit.getScheduler().runTask(plugin, () -> {
+                if (!structures.isStructureBlock(block, "altar")) {
+                    block.getWorld().dropItemNaturally(location, item);
+                }
+            });
         }
     }
 
@@ -163,18 +175,33 @@ public final class SoulAltarListener implements Listener {
 
     private void open(Player player, Location altar) {
         SoulAltarHolder holder = new SoulAltarHolder(altar);
-        Inventory inventory = Bukkit.createInventory(holder, 9, MessageService.color("&8Soul Altar"));
+        Inventory inventory = Bukkit.createInventory(holder, 27, MessageService.color("&8&lSOUL ALTAR"));
         holder.setInventory(inventory);
-        ItemStack filler = item("BLACK_STAINED_GLASS_PANE", "&r");
+        ItemStack filler = item("BLACK_STAINED_GLASS_PANE", "&8 ");
         if (filler != null) {
             for (int slot = 0; slot < inventory.getSize(); slot++) {
                 inventory.setItem(slot, filler);
             }
         }
-        inventory.setItem(4, item("AIR", "&r"));
+        inventory.setItem(4, item("SOUL_LANTERN", "&b&lSOUL FORGE",
+                "&7Offer a supported weapon or tool",
+                "&7to strengthen it with Souls.",
+                "&8Each upgrade has a displayed cost."));
+        inventory.setItem(10, item("ANVIL", "&6&lHOW TO USE",
+                "&71. Place one supported item in the center.",
+                "&72. Review the next upgrade and Soul cost.",
+                "&73. Click the star to confirm.",
+                "&8Your item is returned when you close."));
+        inventory.setItem(INPUT_SLOT, null);
         holder.clearPreview();
         refreshUpgradeButton(holder, inventory);
-        inventory.setItem(8, item("BARRIER", "&c&lClose"));
+        inventory.setItem(22, item("BOOK", "&b&lUPGRADE GUIDE",
+                "&7Upgrades are chosen from the",
+                "&7item's compatible Soul traits.",
+                "&7The preview updates when the item changes.",
+                "&8Upgrades are permanent on that item."));
+        inventory.setItem(CLOSE_SLOT, item("BARRIER", "&c&lClose",
+                "&7Return the offered item to your inventory."));
         player.openInventory(inventory);
     }
 
@@ -192,11 +219,11 @@ public final class SoulAltarListener implements Listener {
                     messages.send((Player) event.getWhoClicked(), "altar-invalid-item");
                     return;
                 }
-                ItemStack center = event.getView().getTopInventory().getItem(4);
+                ItemStack center = event.getView().getTopInventory().getItem(INPUT_SLOT);
                 if (center == null || center.getType().isAir()) {
                     ItemStack moved = clicked.clone();
                     moved.setAmount(1);
-                    event.getView().getTopInventory().setItem(4, moved);
+                    event.getView().getTopInventory().setItem(INPUT_SLOT, moved);
                     if (clicked.getAmount() == 1) {
                         event.getClickedInventory().setItem(event.getSlot(), null);
                     } else {
@@ -207,7 +234,7 @@ public final class SoulAltarListener implements Listener {
             }
             return;
         }
-        if (rawSlot == 4) {
+        if (rawSlot == INPUT_SLOT) {
             if (event.isShiftClick()) {
                 event.setCancelled(true);
                 return;
@@ -233,9 +260,9 @@ public final class SoulAltarListener implements Listener {
             return;
         }
         event.setCancelled(true);
-        if (rawSlot == 6) {
+        if (rawSlot == UPGRADE_SLOT) {
             upgrade((Player) event.getWhoClicked(), holder, event.getView().getTopInventory());
-        } else if (rawSlot == 8) {
+        } else if (rawSlot == CLOSE_SLOT) {
             event.getWhoClicked().closeInventory();
         }
     }
@@ -245,7 +272,7 @@ public final class SoulAltarListener implements Listener {
         if (!(event.getView().getTopInventory().getHolder() instanceof SoulAltarHolder)) {
             return;
         }
-        if (event.getRawSlots().size() != 1 || !event.getRawSlots().contains(4)
+        if (event.getRawSlots().size() != 1 || !event.getRawSlots().contains(INPUT_SLOT)
                 || !isWeapon(event.getOldCursor()) || event.getOldCursor().getAmount() != 1) {
             event.setCancelled(true);
         } else if (event.getView().getTopInventory().getHolder() instanceof SoulAltarHolder holder) {
@@ -258,13 +285,13 @@ public final class SoulAltarListener implements Listener {
         if (!(event.getView().getTopInventory().getHolder() instanceof SoulAltarHolder)) {
             return;
         }
-        ItemStack item = event.getView().getTopInventory().getItem(4);
+        ItemStack item = event.getView().getTopInventory().getItem(INPUT_SLOT);
         if (item == null || item.getType().isAir() || !(event.getPlayer() instanceof Player player)) {
             return;
         }
         Map<Integer, ItemStack> overflow = player.getInventory().addItem(item);
         overflow.values().forEach(leftover -> player.getWorld().dropItemNaturally(player.getLocation(), leftover));
-        event.getView().getTopInventory().setItem(4, null);
+        event.getView().getTopInventory().setItem(INPUT_SLOT, null);
     }
 
     private void upgrade(Player player, SoulAltarHolder holder, Inventory inventory) {
@@ -272,7 +299,7 @@ public final class SoulAltarListener implements Listener {
             messages.send(player, "altar-unavailable");
             return;
         }
-        ItemStack selected = inventory.getItem(4);
+        ItemStack selected = inventory.getItem(INPUT_SLOT);
         if (!isWeapon(selected) || selected.getAmount() != 1) {
             messages.send(player, "altar-invalid-item");
             return;
@@ -295,7 +322,7 @@ public final class SoulAltarListener implements Listener {
                                 || player.getOpenInventory().getTopInventory() != inventory) {
                             return;
                         }
-                        ItemStack current = inventory.getItem(4);
+                        ItemStack current = inventory.getItem(INPUT_SLOT);
                         if (!isWeapon(current) || current.getAmount() != snapshot.getAmount() || !current.isSimilar(snapshot)) {
                             messages.send(player, "altar-invalid-item");
                             return;
@@ -312,7 +339,7 @@ public final class SoulAltarListener implements Listener {
                         }
                         ItemStack upgraded = current.clone();
                         String upgrade = applyUpgrade(upgraded, roll);
-                        inventory.setItem(4, upgraded);
+                        inventory.setItem(INPUT_SLOT, upgraded);
                         refreshUpgradeButton(holder, inventory);
                         messages.send(player, "altar-success", Map.of("upgrade", upgrade, "cost", roll.cost()));
                         player.sendActionBar(MessageService.color("&6Soul Altar &8» &f" + upgrade + " &7applied"));
@@ -413,28 +440,31 @@ public final class SoulAltarListener implements Listener {
     }
 
     private void refreshUpgradeButton(SoulAltarHolder holder, Inventory inventory) {
-        ItemStack selected = inventory.getItem(4);
+        ItemStack selected = inventory.getItem(INPUT_SLOT);
         refreshSoulAttributes(selected);
         if (!isWeapon(selected) || selected.getAmount() != 1) {
             holder.clearPreview();
-            inventory.setItem(6, item("NETHER_STAR", "&6&lUpgrade",
-                    "&7Place a supported weapon, tool, or book in the center.",
-                    "&7Soul limit: &b" + config.maxBalance(), "&aNo cooldown"));
+            inventory.setItem(UPGRADE_SLOT, item("GRAY_DYE", "&7&lWAITING FOR OFFERING",
+                    "&7Place one supported weapon, tool, or book",
+                    "&7in the center slot to preview an upgrade.",
+                    "&7Soul balance cap: &b" + config.maxBalance()));
             return;
         }
         UpgradeRoll roll = rollUpgrade(selected);
         if (roll == null) {
             holder.clearPreview();
-            inventory.setItem(6, item("NETHER_STAR", "&e&lMaxed",
-                    "&7This item has reached every compatible upgrade cap.",
-                    "&7Soul limit: &b" + config.maxBalance()));
+            inventory.setItem(UPGRADE_SLOT, item("EXPERIENCE_BOTTLE", "&a&lFULLY AWAKENED",
+                    "&7This item has reached every compatible",
+                    "&7Soul upgrade cap.",
+                    "&8Try another supported item."));
             return;
         }
         holder.setPreview(selected, roll.type(), roll.amount(), roll.cost());
-        inventory.setItem(6, item("NETHER_STAR", "&6&lUpgrade &8(&e" + roll.cost() + " Souls&8)",
-                "&7Next upgrade: &f" + displayUpgrade(roll.type()),
-                "&7Price: &b" + roll.cost() + " Souls",
-                "&7Your soul limit: &b" + config.maxBalance(), "&aNo cooldown"));
+        inventory.setItem(UPGRADE_SLOT, item("NETHER_STAR", "&6&lCONFIRM UPGRADE",
+                "&7Next trait: &f" + displayUpgrade(roll.type()),
+                "&7Increase: &b" + String.format(java.util.Locale.ROOT, "%.2f", roll.amount() * 100) + "%",
+                "&7Cost: &b" + roll.cost() + " Souls",
+                "&eClick to apply permanently."));
     }
 
     private void refreshSoulAttributes(ItemStack item) {
@@ -1116,13 +1146,14 @@ public final class SoulAltarListener implements Listener {
         if (densityRingParticle != null || densityAccentParticle != null) {
             for (int point = 0; point < 32; point++) {
                 double angle = Math.PI * 2 * point / 32;
-                Location ring = center.clone().add(Math.cos(angle) * 5, 0.15, Math.sin(angle) * 5);
+                double x = center.getX() + Math.cos(angle) * 5;
+                double y = center.getY() + 0.15;
+                double z = center.getZ() + Math.sin(angle) * 5;
                 if (densityRingParticle != null) {
-                    center.getWorld().spawnParticle(densityRingParticle.get(), ring, 1, 0, 0, 0, 0);
+                    center.getWorld().spawnParticle(densityRingParticle.get(), x, y, z, 1, 0, 0, 0, 0);
                 }
                 if (densityAccentParticle != null && point % 2 == 0) {
-                    center.getWorld().spawnParticle(densityAccentParticle.get(), ring.clone().add(0, 0.25, 0),
-                            1, 0, 0, 0, 0);
+                    center.getWorld().spawnParticle(densityAccentParticle.get(), x, y + 0.25, z, 1, 0, 0, 0, 0);
                 }
             }
         }
@@ -1133,9 +1164,16 @@ public final class SoulAltarListener implements Listener {
         Location origin = attacker.getEyeLocation();
         Vector direction = origin.getDirection().normalize();
         if (breachLineParticle != null) {
+            Vector side = new Vector(-direction.getZ(), 0, direction.getX());
             for (double distance = 0.6; distance <= 4.8; distance += 0.6) {
-                Location point = origin.clone().add(direction.clone().multiply(distance));
-                origin.getWorld().spawnParticle(breachLineParticle.get(), point, 1, 0, 0, 0, 0);
+                double x = origin.getX() + direction.getX() * distance;
+                double y = origin.getY() + direction.getY() * distance;
+                double z = origin.getZ() + direction.getZ() * distance;
+                origin.getWorld().spawnParticle(breachLineParticle.get(), x, y, z, 1, 0, 0, 0, 0);
+                origin.getWorld().spawnParticle(breachLineParticle.get(), x + side.getX() * 0.12, y,
+                        z + side.getZ() * 0.12, 1, 0, 0, 0, 0);
+                origin.getWorld().spawnParticle(breachLineParticle.get(), x - side.getX() * 0.12, y,
+                        z - side.getZ() * 0.12, 1, 0, 0, 0, 0);
             }
         }
 
@@ -1251,8 +1289,50 @@ public final class SoulAltarListener implements Listener {
     }
 
     private void feedback(Player player, Location location) {
+        UUID playerId = player.getUniqueId();
+        if (!activeAltarFeedback.add(playerId)) {
+            return;
+        }
         XSound.matchXSound(config.altarSound()).ifPresent(sound -> sound.play(player));
-        XParticle.of(config.altarParticle()).ifPresent(particle ->
-                player.getWorld().spawnParticle(particle.get(), location.clone().add(0.5, 1, 0.5), 20, 0.35, 0.35, 0.35, 0.02));
+        XParticle particle = XParticle.of(config.altarParticle()).orElse(null);
+        if (particle == null) {
+            activeAltarFeedback.remove(playerId);
+            return;
+        }
+        double centerX = location.getX() + 0.5;
+        double centerY = location.getY() + 1.0;
+        double centerZ = location.getZ() + 0.5;
+        org.bukkit.World world = location.getWorld();
+        new org.bukkit.scheduler.BukkitRunnable() {
+            private int frame;
+
+            @Override
+            public void run() {
+                if (!player.isOnline() || frame >= 12) {
+                    cancel();
+                    activeAltarFeedback.remove(playerId);
+                    return;
+                }
+                double progress = frame / 11.0;
+                double radius = 0.2 + progress * 0.42;
+                double angle = frame * 0.72;
+                for (int strand = 0; strand < 2; strand++) {
+                    double strandAngle = angle + Math.PI * strand;
+                    double x = centerX + Math.cos(strandAngle) * radius;
+                    double y = centerY + 0.12 + progress * 0.8 + strand * 0.12;
+                    double z = centerZ + Math.sin(strandAngle) * radius;
+                    world.spawnParticle(particle.get(), x, y, z, 1, 0, 0, 0, 0);
+                    if (altarFeedbackAccentParticle != null && strand == 0 && frame % 3 == 0) {
+                        world.spawnParticle(altarFeedbackAccentParticle.get(), x, y + 0.14, z,
+                                1, 0, 0, 0, 0);
+                    }
+                }
+                if (frame == 0) {
+                    world.spawnParticle(particle.get(), centerX, centerY + 0.1, centerZ,
+                            8, 0.16, 0.18, 0.16, 0.01);
+                }
+                frame++;
+            }
+        }.runTaskTimer(plugin, 0L, 1L);
     }
 }

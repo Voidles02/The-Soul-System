@@ -95,6 +95,7 @@ public final class SoulsPlugin extends JavaPlugin {
         fragmentService = new FragmentService(this, soulService, soulsConfig);
         recipeService = new SoulRecipeService(this, soulsConfig);
         recipeService.registerRecipes();
+        Bukkit.getOnlinePlayers().forEach(recipeService::discoverRecipes);
         SoulStructureService structures = new SoulStructureService(this);
         GuideService guideService = new GuideService(this, soulsConfig);
 
@@ -139,7 +140,8 @@ public final class SoulsPlugin extends JavaPlugin {
         superweaponService = new SuperweaponService(this, altar, messageService);
         getServer().getPluginManager().registerEvents(superweaponService, this);
         SoulsCommand command = new SoulsCommand(this, soulService, fragmentService, databaseManager,
-                soulsConfig, messageService, new SoulStatsGui(this, soulService, fragmentService, soulsConfig, databaseManager), superweaponService);
+                soulsConfig, messageService, new SoulStatsGui(this, soulService, fragmentService, soulsConfig, databaseManager),
+                recipeService, superweaponService);
         getCommand("souls").setExecutor(command);
         getCommand("souls").setTabCompleter(command);
         getCommand("guide").setExecutor(new GuideCommand(guideService, messageService));
@@ -156,6 +158,7 @@ public final class SoulsPlugin extends JavaPlugin {
             @EventHandler
             public void onPlayerJoin(PlayerJoinEvent event) {
                 Player player = event.getPlayer();
+                recipeService.discoverRecipes(player);
                 resourcePackRetries.remove(player.getUniqueId());
                 resourcePackRequests.remove(player.getUniqueId());
                 getServer().getScheduler().runTaskLater(SoulsPlugin.this, () -> {
@@ -259,7 +262,7 @@ public final class SoulsPlugin extends JavaPlugin {
                 "admin", staffPermissions,
                 "owner", staffPermissions).forEach((groupName, permissions) ->
                 luckPerms.getGroupManager().loadGroup(groupName).thenAccept(optionalGroup -> {
-                    if (optionalGroup.isEmpty()) {
+                    if (!isEnabled() || optionalGroup.isEmpty()) {
                         return;
                     }
                     Group group = optionalGroup.get();
@@ -271,16 +274,20 @@ public final class SoulsPlugin extends JavaPlugin {
                             changed |= group.data().add(PermissionNode.builder(permission).build()).wasSuccessful();
                         }
                     }
-                    if (changed) {
+                    if (changed && isEnabled()) {
                         luckPerms.getGroupManager().saveGroup(group).exceptionally(error -> {
-                            getLogger().warning("Could not save Souls permissions for LuckPerms group '"
-                                    + groupName + "': " + error.getMessage());
+                            if (isEnabled()) {
+                                getLogger().warning("Could not save Souls permissions for LuckPerms group '"
+                                        + groupName + "': " + error.getMessage());
+                            }
                             return null;
                         });
                     }
                 }).exceptionally(error -> {
-                    getLogger().warning("Could not check LuckPerms group '" + groupName
-                            + "' for Souls permissions: " + error.getMessage());
+                    if (isEnabled()) {
+                        getLogger().warning("Could not check LuckPerms group '" + groupName
+                                + "' for Souls permissions: " + error.getMessage());
+                    }
                     return null;
                 }));
         getLogger().info("LuckPerms detected; checking existing default and staff groups for Souls permissions.");
@@ -390,6 +397,7 @@ public final class SoulsPlugin extends JavaPlugin {
         soulsConfig.reload();
         messageService.reload();
         recipeService.registerRecipes();
+        Bukkit.getOnlinePlayers().forEach(recipeService::discoverRecipes);
         return databaseManager.initialize().handle((ignored, error) -> {
             databaseAvailable = error == null;
             if (error != null) {

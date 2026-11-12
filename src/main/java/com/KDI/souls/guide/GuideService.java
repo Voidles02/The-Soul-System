@@ -58,16 +58,18 @@ public final class GuideService {
                         + "&8The server controls the power curve."),
                 page("&3&lSOUL SHARDS", "&8Small fragments, real value\n\n"
                         + "&7Configured mobs can drop tagged Soul Shards. Only marked shards count; ordinary lookalike items do not.\n\n"
-                        + "&7Hold one in your main hand and right-click to consume it for a random Soul reward. If you are at the balance cap, it is not consumed.\n\n"
-                        + "&7Use &f/souls fragments &7to count yours."),
+                        + "&7Right-click a shard in your main hand to claim it. Sneak and right-click, shift-right-click a shard in your inventory, or use &f/souls claim &7to claim eligible shards in bulk.\n\n"
+                        + "&7Claims respect the balance cap. Shards that cannot fit remain untouched. Use &f/souls fragments &7to count shards, or &f/souls convert &7to convert them at the configured rate."),
                 page("&e&lCOMMANDS", "&8Your everyday tools\n\n"
                         + "&f/souls &7Open your profile\n"
                         + "&f/souls top &7View the top balances\n"
                         + "&f/souls pay <player> <amount> &7Transfer Souls\n"
                         + "&f/souls fragments &7Count Soul Shards\n"
-                        + "&f/souls convert &7Convert shards\n"
+                        + "&f/souls claim &7Claim eligible shards in bulk\n"
+                        + "&f/souls convert &7Convert shards at the configured rate\n"
+                        + "&f/souls sw-info &7Read about the superweapons\n"
                         + "&f/guide &7Open this codex\n\n"
-                        + "&7Use &f/souls &7anytime to reopen your profile."),
+                        + "&7The server may restrict optional features or commands. Use &f/souls &7anytime to reopen your profile."),
                 page("&6&lSOUL ALTAR", "&8The first rite\n\n"
                         + "&7Craft the marked Soul Altar:\n\n"
                         + "&6Gold &fNether Star &6Gold\n"
@@ -86,7 +88,7 @@ public final class GuideService {
                         + "&7Place it and right-click the marked Beacon to claim its configured reward."),
                 page("&d&lSHRINE BLESSING", "&8One player, one timer\n\n"
                         + "&7The default Shrine offers a random reward: &b25 Souls&7, &b2 Soul Shards&7, or &bSpeed II, Haste I and Jump Boost I for 6 minutes&7.\n\n"
-                        + "&7Each player has a persistent cooldown of &b" + cooldownHours + " hours&7 by default. Rewards and feedback can be configured.\n\n"
+                        + "&7Each player has a persistent cooldown of &b" + cooldownHours + " hours&7 by default. Cooldown and reward settings can be changed by the server.\n\n"
                         + "&8The balance cap still applies."),
                 page("&5&lARTIFACTS", "&8Relics of immense power\n\n"
                         + "&7When superweapons are enabled, authorized players can access the Book of Bōc and the Sarculum through the server's Souls commands.\n\n"
