@@ -110,6 +110,7 @@ public final class SoulsPlugin extends JavaPlugin {
                 new com.KDI.souls.listener.SoulShrineListener(this, soulService, fragmentService, soulsConfig, messageService, structures), this);
         getServer().getScheduler().runTaskTimer(this,
                 () -> Bukkit.getOnlinePlayers().forEach(soulService::ensureBoost), 100L, 100L);
+        getServer().getScheduler().runTaskTimer(this, soulService::tickSoulTierParticles, 10L, 10L);
         getServer().getScheduler().runTaskTimer(this, soulService::evictOfflineBalances, 1200L, 1200L);
         getServer().getScheduler().runTaskTimer(this, () -> {
             if (databaseManager.isAvailable()) {

@@ -6,6 +6,7 @@ import com.KDI.souls.event.SoulEarnEvent;
 import com.KDI.souls.event.SoulLoseEvent;
 import com.KDI.souls.event.SoulSpendEvent;
 import com.cryptomorin.xseries.XPotion;
+import com.cryptomorin.xseries.particles.XParticle;
 import org.bukkit.Bukkit;
 import org.bukkit.entity.Player;
 import org.bukkit.potion.PotionEffect;
@@ -39,15 +40,26 @@ public final class SoulService {
     private final Set<UUID> unresolvedBalances = ConcurrentHashMap.newKeySet();
     private final Map<UUID, Set<PotionEffectType>> ownedBoostEffects = new ConcurrentHashMap<>();
     private final Map<UUID, Map<PotionEffectType, PotionEffect>> preservedBoostEffects = new ConcurrentHashMap<>();
+    private final Map<PotionEffectType, Integer> boostEffectCaps = new HashMap<>();
+    private final XParticle[] soulTierParticles = new XParticle[5];
     private long lastPersistenceWarningNanos;
     private boolean hasPersistenceWarning;
     private long balanceLoadRetryAfterNanos;
+    private long soulTierParticlePulse;
 
     public SoulService(JavaPlugin plugin, DatabaseManager database, SoulsConfig config) {
         this.plugin = plugin;
         this.database = database;
         this.config = config;
         this.localStore = new LocalSoulStore(plugin, config);
+        registerBoostEffectCap("FAST_DIGGING", 2);
+        registerBoostEffectCap("INCREASE_DAMAGE", 3);
+        registerBoostEffectCap("SPEED", 3);
+        registerBoostEffectCap("ABSORPTION", 2);
+        String[] tierParticleNames = {"SOUL", "ENCHANT", "END_ROD", "SOUL_FIRE_FLAME", "TOTEM_OF_UNDYING"};
+        for (int tier = 0; tier < tierParticleNames.length; tier++) {
+            soulTierParticles[tier] = XParticle.of(tierParticleNames[tier]).orElse(null);
+        }
     }
 
     public synchronized CompletableFuture<Long> loadBalance(UUID uuid) {
@@ -407,7 +419,7 @@ public final class SoulService {
         if (!refresh) {
             for (PotionEffectType type : owned) {
                 PotionEffect effect = player.getPotionEffect(type);
-                if (effect == null || effect.getAmplifier() != amplifier) {
+                if (effect == null || effect.getAmplifier() != cappedAmplifier(type, amplifier)) {
                     refresh = true;
                     break;
                 }
@@ -439,6 +451,43 @@ public final class SoulService {
         return count;
     }
 
+    private void registerBoostEffectCap(String potionName, int maximumLevel) {
+        XPotion.matchXPotion(potionName)
+                .map(potion -> potion.buildPotionEffect(1, 0).getType())
+                .ifPresent(type -> boostEffectCaps.put(type, maximumLevel - 1));
+    }
+
+    private int cappedAmplifier(PotionEffectType type, int amplifier) {
+        return Math.min(amplifier, boostEffectCaps.getOrDefault(type, amplifier));
+    }
+
+    public void tickSoulTierParticles() {
+        if (!config.boostEnabled()) {
+            return;
+        }
+        long step = config.boostSoulsPerStep();
+        long pulse = soulTierParticlePulse++;
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            long balance = balances.getOrDefault(player.getUniqueId(), 0L);
+            int tier = (int) Math.min(soulTierParticles.length, balance / step);
+            if (tier <= 0) {
+                continue;
+            }
+            XParticle particle = soulTierParticles[tier - 1];
+            if (particle == null) {
+                continue;
+            }
+            long phase = pulse + (player.getUniqueId().hashCode() & 0x7fffffffL);
+            double angle = phase * 0.24;
+            double radius = 0.38 + tier * 0.025;
+            org.bukkit.Location location = player.getLocation();
+            double x = location.getX() + Math.cos(angle) * radius;
+            double y = location.getY() + 0.3 + (phase % 14) * 0.1;
+            double z = location.getZ() + Math.sin(angle) * radius;
+            player.spawnParticle(particle.get(), x, y, z, 1, 0, 0, 0, 0);
+        }
+    }
+
     public void clearBoostEffects(Player player) {
         UUID uuid = player.getUniqueId();
         Set<PotionEffectType> owned = ownedBoostEffects.remove(uuid);
@@ -458,14 +507,15 @@ public final class SoulService {
     private void addBoostEffect(Player player, String potionName, int amplifier) {
         XPotion.matchXPotion(potionName)
                 .ifPresent(potion -> {
-                    PotionEffectType type = potion.buildPotionEffect(PotionEffect.INFINITE_DURATION, 0).getType();
+                    PotionEffectType type = potion.buildPotionEffect(1, 0).getType();
                     PotionEffect previous = player.getPotionEffect(type);
                     if (previous != null) {
                         preservedBoostEffects.computeIfAbsent(player.getUniqueId(), ignored -> new HashMap<>())
                                 .put(type, previous);
                     }
+                    int effectAmplifier = cappedAmplifier(type, amplifier);
                     PotionEffect effect = invisibleInfiniteEffect(
-                            potion.buildPotionEffect(PotionEffect.INFINITE_DURATION, amplifier));
+                            potion.buildPotionEffect(PotionEffect.INFINITE_DURATION, effectAmplifier));
                     player.addPotionEffect(effect, true);
                     ownedBoostEffects.computeIfAbsent(player.getUniqueId(), ignored -> new HashSet<>()).add(type);
                 });

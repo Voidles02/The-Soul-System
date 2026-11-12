@@ -65,6 +65,7 @@ The default maximum balance is **1,000 Souls**. Every **100 Souls** adds a progr
 | `/souls fragments` | Count your tagged Soul Fragments. |
 | `/souls claim` | Claim tagged Fragments from your full inventory in one bulk action. |
 | `/souls convert` | Convert Fragments into Souls using the configured rate. |
+| `/souls recipe` or `/souls recepie` | View the Altar and Shrine crafting layouts and whether each recipe is enabled. |
 | `/guide` or `/soul-guide` | Open the tutorial book. |
 | `/souls sw-info` | Open the superweapon information book. |
 | `/souls-performance` | View plugin counters and server-wide performance metrics. |
@@ -100,12 +101,12 @@ Maces can also roll two one-time altar upgrades. **Density Mace** triggers a 5-b
 Craft the marked Shrine in a crafting table:
 
 ```text
-Amethyst Shard Gold Ingot  Amethyst Shard
-Soul Sand     Nether Star  Gold Ingot
+Amethyst Shard Soul Sand   Amethyst Shard
+Gold Ingot    Nether Star  Gold Ingot
 Obsidian      Obsidian     Obsidian
 ```
 
-Place the crafted Shrine and right-click the marked Beacon. By default, each player can activate it once every **2 hours**. A random reward can grant **25 Souls**, **2 Fragments**, or **Speed II, Haste I, and Jump Boost I for 6 minutes**. Reward effects, amounts, feedback, broadcasts, and cooldown are configurable. An ordinary Beacon is not a Soul Shrine.
+Place the crafted Shrine and right-click the marked Beacon. The enabled recipes are also discoverable in the vanilla recipe book; `/souls recipe` shows both layouts and their enabled status. By default, each player can activate the Shrine once every **2 hours**. A random reward can grant **25 Souls**, **2 Fragments**, or **Speed II, Haste I, and Jump Boost I for 6 minutes**. Reward effects, amounts, feedback, broadcasts, and cooldown are configurable. An ordinary Beacon is not a Soul Shrine.
 
 ### Artifacts
 

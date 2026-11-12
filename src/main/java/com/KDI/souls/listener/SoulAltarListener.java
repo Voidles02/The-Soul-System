@@ -1308,28 +1308,27 @@ public final class SoulAltarListener implements Listener {
 
             @Override
             public void run() {
-                if (!player.isOnline() || frame >= 12) {
+                if (!player.isOnline() || frame >= 11) {
                     cancel();
                     activeAltarFeedback.remove(playerId);
                     return;
                 }
-                double progress = frame / 11.0;
-                double radius = 0.2 + progress * 0.42;
-                double angle = frame * 0.72;
-                for (int strand = 0; strand < 2; strand++) {
-                    double strandAngle = angle + Math.PI * strand;
-                    double x = centerX + Math.cos(strandAngle) * radius;
-                    double y = centerY + 0.12 + progress * 0.8 + strand * 0.12;
-                    double z = centerZ + Math.sin(strandAngle) * radius;
-                    world.spawnParticle(particle.get(), x, y, z, 1, 0, 0, 0, 0);
-                    if (altarFeedbackAccentParticle != null && strand == 0 && frame % 3 == 0) {
-                        world.spawnParticle(altarFeedbackAccentParticle.get(), x, y + 0.14, z,
+                double progress = frame / 10.0;
+                double radius = 0.2 + progress * 0.46;
+                double height = centerY + 0.12 + Math.sin(progress * Math.PI) * 0.3;
+                for (int point = 0; point < 4; point++) {
+                    double pointAngle = frame * 0.18 + Math.PI * point / 2;
+                    double x = centerX + Math.cos(pointAngle) * radius;
+                    double z = centerZ + Math.sin(pointAngle) * radius;
+                    world.spawnParticle(particle.get(), x, height, z, 1, 0, 0, 0, 0);
+                    if (altarFeedbackAccentParticle != null && point == 0 && frame % 5 == 0) {
+                        world.spawnParticle(altarFeedbackAccentParticle.get(), x, height + 0.14, z,
                                 1, 0, 0, 0, 0);
                     }
                 }
                 if (frame == 0) {
                     world.spawnParticle(particle.get(), centerX, centerY + 0.1, centerZ,
-                            8, 0.16, 0.18, 0.16, 0.01);
+                            6, 0.16, 0.12, 0.16, 0.01);
                 }
                 frame++;
             }

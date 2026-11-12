@@ -516,6 +516,17 @@ public final class SoulShrineListener implements Listener {
         UUID playerId = player.getUniqueId();
         ShrinePosition position = new ShrinePosition(location.getWorld().getUID(),
                 location.getBlockX(), location.getBlockY(), location.getBlockZ());
+        XSound.matchXSound(config.shrineSound()).ifPresent(sound -> sound.play(player));
+        XParticle particle = XParticle.of(config.shrineParticle()).orElse(shrineAccentParticle);
+        if (particle == null) {
+            return;
+        }
+        double centerX = location.getX() + 0.5;
+        double centerY = location.getY() + 1.0;
+        double centerZ = location.getZ() + 0.5;
+        org.bukkit.World world = location.getWorld();
+        world.spawnParticle(particle.get(), centerX, centerY + 0.12, centerZ,
+                8, 0.18, 0.2, 0.18, 0.01);
         if (!activeShrineFeedback.add(playerId)) {
             return;
         }
@@ -523,17 +534,6 @@ public final class SoulShrineListener implements Listener {
             activeShrineFeedback.remove(playerId);
             return;
         }
-        XSound.matchXSound(config.shrineSound()).ifPresent(sound -> sound.play(player));
-        XParticle particle = XParticle.of(config.shrineParticle()).orElse(null);
-        if (particle == null) {
-            activeShrineFeedback.remove(playerId);
-            activeShrineLocations.remove(position);
-            return;
-        }
-        double centerX = location.getX() + 0.5;
-        double centerY = location.getY() + 1.0;
-        double centerZ = location.getZ() + 0.5;
-        org.bukkit.World world = location.getWorld();
         new org.bukkit.scheduler.BukkitRunnable() {
             private int frame;
 
@@ -558,10 +558,6 @@ public final class SoulShrineListener implements Listener {
                         world.spawnParticle(shrineAccentParticle.get(), x, y + 0.16, z,
                                 1, 0, 0, 0, 0);
                     }
-                }
-                if (frame == 0) {
-                    world.spawnParticle(particle.get(), centerX, centerY + 0.12, centerZ,
-                            8, 0.18, 0.2, 0.18, 0.01);
                 }
                 frame++;
             }

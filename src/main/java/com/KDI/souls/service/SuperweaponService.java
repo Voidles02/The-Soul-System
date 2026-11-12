@@ -201,37 +201,71 @@ public final class SuperweaponService implements Listener {
         meta.setTitle(MessageService.color(title.length() > 32 ? title.substring(0, 32) : title));
         meta.setAuthor(plugin.getConfig().getString("superweapon.info-book.author", "The Keepers of Souls"));
         meta.setPages(
-                infoPage("&5&lTHE SOULBOUND ARMAMENTS", "&8A field guide to two artifacts\n\n"
-                        + "&7The Book of Bōc and the Sarculum are non-craftable weapons. Learn each ability, its range, and its cost before entering a fight."),
-                infoPage("&d&lBOOK OF BŌC", "&8Invocation and power\n\n"
-                        + "&7Right-click to invoke the book and gain:\n"
-                        + "&5Strength III &7for 8 minutes\n"
-                        + "&5Regeneration V &7for 5 minutes\n"
-                        + "&7Slowness I &7for 8 minutes\n"
-                        + "&7Hunger I &7for 5 minutes\n\n"
-                        + "&7Activation cooldown: &f" + formatCooldown("activate", 15 * 60 * 1000L)),
-                infoPage("&b&lWARDEN'S BEAM", "&8A sustained line attack\n\n"
-                        + "&7Left-click to channel the beam for 5 seconds. It reaches up to 45 blocks and can hit a target again every 10 ticks.\n\n"
-                        + "&7Each hit deals &f20 damage &7(10 hearts).\n"
-                        + "&7Beam cooldown: &f" + formatCooldown("beam", 10 * 60 * 1000L)),
+                infoPage("&5&lSOULBOUND RELICS", "&8Two weapons. Two paths.\n\n"
+                        + "&0The Book of Bōc channels\n"
+                        + "&0invocations and a sustained\n"
+                        + "&0beam. The Sarculum turns\n"
+                        + "&0movement into a dash and\n"
+                        + "&0devastating slams.\n\n"
+                        + "&0Both are non-craftable\n"
+                        + "&0artifacts with configurable\n"
+                        + "&0server cooldowns."),
+                infoPage("&d&lBOOK OF BŌC", "&8Invocation | Right-click\n\n"
+                        + "&0Strength III — 8 min\n"
+                        + "&0Regeneration V — 5 min\n"
+                        + "&0Slowness I — 8 min\n"
+                        + "&0Hunger I — 5 min\n\n"
+                        + "&0Default cooldown: " + formatCooldown("activate", 15 * 60 * 1000L)),
+                infoPage("&b&lWARDEN'S BEAM", "&8Left-click | 5 seconds\n\n"
+                        + "&0Range: 45 blocks\n"
+                        + "&0Damage: 20 per hit\n"
+                        + "&0(10 hearts)\n"
+                        + "&0Can hit the same target\n"
+                        + "&0every 10 ticks.\n\n"
+                        + "&0Default cooldown: " + formatCooldown("beam", 10 * 60 * 1000L)),
                 infoPage("&3&lFOLLOWING SHOCKWAVES", "&8Three impacts after the beam\n\n"
-                        + "&7Three shockwaves expand around and track your position. Each can hit nearby targets.\n\n"
-                        + "&7Damage is &f64 &7near 2 blocks, tapering to &f24 &7at 12 blocks. Targets are afflicted with &5Slowness II &7for 3 seconds."),
-                infoPage("&5&lTHE SARCULUM", "&8A Netherite Hoe artifact\n\n"
-                        + "&7Sneak + left-click to dash. Steer by changing direction as you move. The dash travels up to 25 blocks and strikes within 4 blocks of its path for up to &f13.5 damage &7(6.75 hearts).\n\n"
-                        + "&7Dash cooldown: &f" + formatCooldown("dash", 2 * 60 * 1000L)),
-                infoPage("&6&lGROUND SLAM", "&8Launch, then strike once\n\n"
-                        + "&7Sneak + right-click while grounded to launch up to 8 blocks and deliver one impact.\n\n"
-                        + "&7Damage peaks at &f18 &7(9 hearts) near the center and falls to half at the 8-block edge.\n"
-                        + "&7Cooldown: &f" + formatCooldown("slam", 5 * 60 * 1000L)),
-                infoPage("&c&lAIRBORNE MACE SLAM", "&8Two powerful impacts\n\n"
-                        + "&7While airborne, sneak + right-click with a mace in your hotbar to launch up to 12 blocks and trigger two impacts. Keep the mace in your hotbar until the action finishes.\n\n"
-                        + "&7Each impact deals up to &f30 damage &7(15 hearts), falling to half at the 12-block edge.\n"
-                        + "&7Cooldown: &f" + formatCooldown("mace-slam", 15 * 60 * 1000L)),
-                infoPage("&e&lCOOLDOWNS & USE", "&8Know your timing\n\n"
-                        + "&7Cooldowns are individually configurable by the server. When a weapon is held during recharge, its active cooldown is shown in the compact HUD.\n\n"
-                        + "&7Book of Bōc: right-click for its invocation; left-click for the beam.\n"
-                        + "&7Sarculum: sneak + left-click to dash; sneak + right-click to slam."));
+                        + "&0Three waves track your\n"
+                        + "&0position and strike nearby\n"
+                        + "&0targets.\n\n"
+                        + "&0At 2 blocks: 64 damage\n"
+                        + "&0At 12 blocks: 24 damage\n"
+                        + "&0Slowness II for 3 seconds."),
+                infoPage("&5&lTHE SARCULUM", "&8Netherite Hoe artifact\n\n"
+                        + "&0Sneak + left-click: dash.\n"
+                        + "&0Steer by aiming as you move.\n"
+                        + "&0Travel up to 25 blocks;\n"
+                        + "&0strike within 4 blocks of\n"
+                        + "&0the path for up to 13.5\n"
+                        + "&0damage (6.75 hearts).\n\n"
+                        + "&0Default cooldown: " + formatCooldown("dash", 2 * 60 * 1000L)),
+                infoPage("&6&lGROUND SLAM", "&8One impact\n\n"
+                        + "&0While grounded, sneak +\n"
+                        + "&0right-click to launch up to\n"
+                        + "&08 blocks, then strike once.\n\n"
+                        + "&0Up to 18 damage (9 hearts)\n"
+                        + "&0near the center, falling to\n"
+                        + "&0half at the 8-block edge.\n\n"
+                        + "&0Default cooldown: " + formatCooldown("slam", 5 * 60 * 1000L)),
+                infoPage("&c&lAIRBORNE MACE SLAM", "&8Two impacts\n\n"
+                        + "&0While airborne, sneak +\n"
+                        + "&0right-click with a mace in\n"
+                        + "&0your hotbar. Launch up to\n"
+                        + "&012 blocks for two impacts.\n"
+                        + "&0Keep the mace in your\n"
+                        + "&0hotbar until it finishes.\n\n"
+                        + "&0Each impact: up to 30 damage;\n"
+                        + "&0half at the 12-block edge.\n"
+                        + "&0Default cooldown: " + formatCooldown("mace-slam", 15 * 60 * 1000L)),
+                infoPage("&3&lCOOLDOWNS & USE", "&8Quick controls\n\n"
+                        + "&7Book of Bōc\n"
+                        + "&0Right-click: invoke\n"
+                        + "&0Left-click: beam\n"
+                        + "&7Sarculum\n"
+                        + "&0Sneak + left-click: dash\n"
+                        + "&0Sneak + right-click: slam\n\n"
+                        + "&0Cooldowns are adjustable.\n"
+                        + "&0Hold an artifact to see its\n"
+                        + "&0active cooldown on the HUD."));
         book.setItemMeta(meta);
         player.openBook(book);
     }
@@ -245,8 +279,8 @@ public final class SuperweaponService implements Listener {
                 .replace("&3", "&1")
                 .replace("&9", "&1")
                 .replace("&d", "&5")
-                .replace("&e", "&4")
-                .replace("&6", "&4"));
+                .replace("&e", "&2")
+                .replace("&6", "&3"));
     }
 
     private String formatCooldown(String ability, long defaultMillis) {
