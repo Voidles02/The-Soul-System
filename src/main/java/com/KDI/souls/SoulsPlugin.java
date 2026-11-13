@@ -257,13 +257,21 @@ public final class SoulsPlugin extends JavaPlugin {
                 "souls.use", "souls.pay", "souls.performance", "souls.altar", "souls.shrine");
         List<String> staffPermissions = List.of(
                 "souls.use", "souls.pay", "souls.performance", "souls.altar", "souls.shrine", "souls.admin");
-        Map.of(
-                "default", playerPermissions,
-                "moderator", staffPermissions,
-                "admin", staffPermissions,
-                "owner", staffPermissions).forEach((groupName, permissions) ->
+        Map.ofEntries(
+                Map.entry("default", playerPermissions),
+                Map.entry("player", playerPermissions),
+                Map.entry("member", playerPermissions),
+                Map.entry("moderator", staffPermissions),
+                Map.entry("mod", staffPermissions),
+                Map.entry("admin", staffPermissions),
+                Map.entry("administrator", staffPermissions),
+                Map.entry("owner", staffPermissions)).forEach((groupName, permissions) ->
                 luckPerms.getGroupManager().loadGroup(groupName).thenAccept(optionalGroup -> {
-                    if (!isEnabled() || optionalGroup.isEmpty()) {
+                    if (!isEnabled()) {
+                        return;
+                    }
+                    if (optionalGroup.isEmpty()) {
+                        getLogger().fine("LuckPerms group '" + groupName + "' was not found; skipping Souls permission setup.");
                         return;
                     }
                     Group group = optionalGroup.get();

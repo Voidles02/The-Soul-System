@@ -76,7 +76,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             case "fragments" -> fragments(sender);
             case "claim" -> claim(sender);
             case "convert" -> convert(sender);
-            case "recipe", "recepie" -> recipes(sender);
+            case "recipe" -> recipes(sender);
             case "give" -> admin(sender, args, AdminAction.GIVE);
             case "take" -> admin(sender, args, AdminAction.TAKE);
             case "set" -> admin(sender, args, AdminAction.SET);
@@ -613,7 +613,7 @@ public final class SoulsCommand implements CommandExecutor, TabCompleter {
             return List.of();
         }
         if (args.length == 1) {
-            return Arrays.asList("profile", "top", "pay", "fragments", "claim", "convert", "recipe", "recepie", "give", "take", "set", "remove", "inspect", "reload", "textures", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
+            return Arrays.asList("profile", "top", "pay", "fragments", "claim", "convert", "recipe", "give", "take", "set", "remove", "inspect", "reload", "textures", "sw", "sw-info", "sw-cooldown", "artifact", "artifacts").stream()
                     .filter(value -> sender.hasPermission("souls.admin") || !ADMIN_SUBCOMMANDS.contains(value))
                     .filter(value -> value.startsWith(args[0].toLowerCase())).toList();
         }

@@ -52,10 +52,11 @@ public final class SoulService {
         this.database = database;
         this.config = config;
         this.localStore = new LocalSoulStore(plugin, config);
-        registerBoostEffectCap("FAST_DIGGING", 2);
-        registerBoostEffectCap("INCREASE_DAMAGE", 3);
+        registerBoostEffectCap("HASTE", 2);
+        registerBoostEffectCap("STRENGTH", 3);
         registerBoostEffectCap("SPEED", 3);
         registerBoostEffectCap("ABSORPTION", 2);
+        registerBoostEffectCap("DOLPHINS_GRACE", 1);
         String[] tierParticleNames = {"SOUL", "ENCHANT", "END_ROD", "SOUL_FIRE_FLAME", "TOTEM_OF_UNDYING"};
         for (int tier = 0; tier < tierParticleNames.length; tier++) {
             soulTierParticles[tier] = XParticle.of(tierParticleNames[tier]).orElse(null);
@@ -394,10 +395,10 @@ public final class SoulService {
             return;
         }
         if (config.boostHaste()) {
-            addBoostEffect(player, "FAST_DIGGING", amplifier);
+            addBoostEffect(player, "HASTE", amplifier);
         }
         if (config.boostStrength()) {
-            addBoostEffect(player, "INCREASE_DAMAGE", amplifier);
+            addBoostEffect(player, "STRENGTH", amplifier);
         }
         if (config.boostSpeed()) {
             addBoostEffect(player, "SPEED", amplifier);
@@ -405,17 +406,20 @@ public final class SoulService {
         if (config.boostAbsorption()) {
             addBoostEffect(player, "ABSORPTION", amplifier);
         }
+        if (isMaximumTier(uuid)) {
+            addBoostEffect(player, "DOLPHINS_GRACE", 0);
+        }
     }
 
     public void ensureBoost(Player player) {
         UUID uuid = player.getUniqueId();
         int amplifier = boostAmplifier(uuid);
-        if (amplifier < 0 || enabledBoostEffectCount() == 0) {
+        if (amplifier < 0 || enabledBoostEffectCount(uuid) == 0) {
             clearBoostEffects(player);
             return;
         }
         Set<PotionEffectType> owned = ownedBoostEffects.get(uuid);
-        boolean refresh = owned == null || owned.size() != enabledBoostEffectCount();
+        boolean refresh = owned == null || owned.size() != enabledBoostEffectCount(uuid);
         if (!refresh) {
             for (PotionEffectType type : owned) {
                 PotionEffect effect = player.getPotionEffect(type);
@@ -442,13 +446,19 @@ public final class SoulService {
         return amplifier >= Integer.MAX_VALUE ? Integer.MAX_VALUE : Math.max(0, (int) Math.floor(amplifier));
     }
 
-    private int enabledBoostEffectCount() {
+    private int enabledBoostEffectCount(UUID uuid) {
         int count = 0;
         if (config.boostHaste()) count++;
         if (config.boostStrength()) count++;
         if (config.boostSpeed()) count++;
         if (config.boostAbsorption()) count++;
+        if (isMaximumTier(uuid)) count++;
         return count;
+    }
+
+    private boolean isMaximumTier(UUID uuid) {
+        long maximumTier = config.maxBalance() / config.boostSoulsPerStep();
+        return maximumTier > 0 && getBalance(uuid) / config.boostSoulsPerStep() >= maximumTier;
     }
 
     private void registerBoostEffectCap(String potionName, int maximumLevel) {

@@ -2,7 +2,7 @@
 
 ### A complete soul-powered progression system for Paper
 
-**Current release: 3.1.5**
+**Current release: 3.1.6**
 
 Earn Souls through combat. Collect shimmering fragments. Build an altar, make your gear stronger, and risk your reserve when you fall. Souls brings progression, collectible currency, custom structures, artifacts, and a polished resource pack together in one plugin.
 
@@ -65,7 +65,7 @@ The default maximum balance is **1,000 Souls**. Every **100 Souls** adds a progr
 | `/souls fragments` | Count your tagged Soul Fragments. |
 | `/souls claim` | Claim tagged Fragments from your full inventory in one bulk action. |
 | `/souls convert` | Convert Fragments into Souls using the configured rate. |
-| `/souls recipe` or `/souls recepie` | View the Altar and Shrine crafting layouts and whether each recipe is enabled. |
+| `/souls recipe` | View the Altar and Shrine crafting layouts and whether each recipe is enabled. |
 | `/guide` or `/soul-guide` | Open the tutorial book. |
 | `/souls sw-info` | Open the superweapon information book. |
 | `/souls-performance` | View plugin counters and server-wide performance metrics. |

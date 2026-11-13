@@ -235,6 +235,11 @@ public final class SoulAltarListener implements Listener {
             return;
         }
         if (rawSlot == INPUT_SLOT) {
+            String click = event.getClick().name();
+            if (!click.equals("LEFT") && !click.equals("RIGHT") && !click.equals("NUMBER_KEY")) {
+                event.setCancelled(true);
+                return;
+            }
             if (event.isShiftClick()) {
                 event.setCancelled(true);
                 return;
@@ -250,7 +255,8 @@ public final class SoulAltarListener implements Listener {
             }
             if (event.getClick().name().equals("NUMBER_KEY")) {
                 ItemStack hotbar = ((Player) event.getWhoClicked()).getInventory().getItem(event.getHotbarButton());
-                if (hotbar != null && !hotbar.getType().isAir() && !isWeapon(hotbar)) {
+                if (hotbar != null && !hotbar.getType().isAir()
+                        && (!isWeapon(hotbar) || hotbar.getAmount() != 1)) {
                     event.setCancelled(true);
                     messages.send((Player) event.getWhoClicked(), "altar-invalid-item");
                 }

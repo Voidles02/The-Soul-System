@@ -1070,6 +1070,42 @@ public final class SuperweaponService implements Listener {
                 ? item.getItemMeta().getPersistentDataContainer().get(artifactKey, PersistentDataType.STRING) : null;
     }
 
+    private boolean artifactAlreadyIssued(String type) {
+        if (plugin.getConfig().getBoolean("superweapon.artifacts." + type + ".issued", false)
+                || artifactOwnerships.values().stream().anyMatch(ownership -> ownership.artifact().equals(type))) {
+            return true;
+        }
+        for (Player online : Bukkit.getOnlinePlayers()) {
+            if (containsArtifactType(online.getInventory(), type)
+                    || containsArtifactType(online.getEnderChest(), type)) {
+                return true;
+            }
+            InventoryView view = online.getOpenInventory();
+            Inventory top = view.getTopInventory();
+            if (top != online.getInventory() && top != online.getEnderChest() && isCustomEnderChest(view)
+                    && containsArtifactType(top, type)) {
+                return true;
+            }
+        }
+        for (org.bukkit.World world : Bukkit.getWorlds()) {
+            for (org.bukkit.entity.Item dropped : world.getEntitiesByClass(org.bukkit.entity.Item.class)) {
+                if (type.equals(artifact(dropped.getItemStack()))) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean containsArtifactType(Inventory inventory, String type) {
+        for (ItemStack item : inventory.getContents()) {
+            if (type.equals(artifact(item))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @EventHandler
     public void onMenuClick(InventoryClickEvent event) {
         if (!(event.getView().getTopInventory().getHolder() instanceof MenuHolder)) {
@@ -1099,6 +1135,15 @@ public final class SuperweaponService implements Listener {
             messages.send(player, "sw-artifact-disabled");
             return;
         }
+        String issuedPath = "superweapon.artifacts." + artifactType + ".issued";
+        if (artifactAlreadyIssued(artifactType)) {
+            if (!plugin.getConfig().getBoolean(issuedPath, false)) {
+                plugin.getConfig().set(issuedPath, true);
+                plugin.saveConfig();
+            }
+            player.sendMessage(MessageService.color("&cThis artifact has already been issued; duplicate grants are blocked."));
+            return;
+        }
         if (item == null) {
             return;
         }
@@ -1107,6 +1152,8 @@ public final class SuperweaponService implements Listener {
             messages.send(player, "sw-inventory-full");
             return;
         }
+        plugin.getConfig().set(issuedPath, true);
+        plugin.saveConfig();
         if (recordArtifactOwner(player, item)) {
             saveArtifactOwnerships();
         }
@@ -1200,7 +1247,7 @@ public final class SuperweaponService implements Listener {
         }
     }
 
-    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    @EventHandler(priority = EventPriority.HIGHEST, ignoreCancelled = true)
     public void onArtifactPickup(EntityPickupItemEvent event) {
         if (!(event.getEntity() instanceof Player player)) {
             return;
@@ -1351,7 +1398,7 @@ public final class SuperweaponService implements Listener {
                 }
                 ticks++;
             }
-        }.runTaskTimer(plugin, 0L, 2L);
+        }.runTaskTimer(plugin, 0L, 4L);
         bocActivationEffects.put(uuid, task);
     }
 
@@ -1472,7 +1519,18 @@ public final class SuperweaponService implements Listener {
                 bar.append("&8░");
             }
         }
-        return MessageService.color(bar.toString());
+        return MessageService.color(bar.append("&7 ").append(formatCooldownRemaining(remainingMillis)).toString());
+    }
+
+    private String formatCooldownRemaining(long remainingMillis) {
+        long totalSeconds = remainingMillis / 1_000L + (remainingMillis % 1_000L == 0L ? 0L : 1L);
+        long hours = totalSeconds / 3_600L;
+        long minutes = totalSeconds / 60L % 60L;
+        long seconds = totalSeconds % 60L;
+        String minuteText = minutes < 10 ? "0" + minutes : Long.toString(minutes);
+        String secondText = seconds < 10 ? "0" + seconds : Long.toString(seconds);
+        return hours > 0 ? hours + ":" + minuteText + ":" + secondText
+                : totalSeconds / 60L + ":" + secondText;
     }
 
     private void refreshHeldArtifactCooldown(Player player, long now) {
